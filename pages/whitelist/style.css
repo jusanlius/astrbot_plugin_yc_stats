@@ -60,19 +60,24 @@ html.bg-on #bg-frost { display: block; }
 html.bg-on { background: #eef2fb; }
 html.bg-on[data-theme="dark"] { background: #101018; }
 
-/* 开启背景图后，卡片 / 输入框切换为半透明毛玻璃配色 */
+/* 开启背景图后，卡片 / 输入框切换为半透明毛玻璃配色
+   注意：只覆盖"玻璃面"相关变量，--text/--muted 交给主题本身决定，
+   否则深色主题会继承浅色的深灰字 → 深字配深卡看不清 */
 html.bg-on {
-  --card: rgba(255, 255, 255, .74);
-  --bg: rgba(255, 255, 255, .5);
-  --line: rgba(255, 255, 255, .68);
-  --text: #2c2a38;
-  --muted: #6b6a7d;
+  --card: rgba(255, 255, 255, .78);
+  --bg: rgba(255, 255, 255, .55);
+  --line: rgba(255, 255, 255, .7);
+  --accent-soft: rgba(253, 234, 243, .8);
 }
 
 html.bg-on[data-theme="dark"] {
-  --card: rgba(26, 26, 34, .68);
-  --bg: rgba(32, 32, 44, .55);
-  --line: rgba(140, 140, 165, .32);
+  --card: rgba(24, 24, 32, .8);
+  --bg: rgba(44, 44, 58, .72);
+  --line: rgba(160, 160, 185, .34);
+  --accent: #ff9fc8;
+  --accent-soft: rgba(88, 48, 70, .6);
+  --text: #f2f0f8;
+  --muted: #b3b1c6;
 }
 
 html.bg-on .card,
@@ -86,14 +91,32 @@ html.bg-on .preview {
 html.bg-on .hdr {
   padding: 12px 16px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, .42);
-  border: 1px solid rgba(255, 255, 255, .55);
+  background: rgba(255, 255, 255, .5);
+  border: 1px solid rgba(255, 255, 255, .6);
   backdrop-filter: blur(16px) saturate(1.1);
 }
 
 html.bg-on[data-theme="dark"] .hdr {
-  background: rgba(22, 22, 30, .5);
-  border-color: rgba(140, 140, 165, .3);
+  background: rgba(18, 18, 26, .66);
+  border-color: rgba(160, 160, 185, .32);
+}
+
+/* 输入框在玻璃卡片里再加深一层底色，保证数值可读 */
+html.bg-on input[type="text"],
+html.bg-on input[type="number"],
+html.bg-on input[type="time"],
+html.bg-on input[type="search"],
+html.bg-on select {
+  background: rgba(255, 255, 255, .72);
+}
+
+html.bg-on[data-theme="dark"] input[type="text"],
+html.bg-on[data-theme="dark"] input[type="number"],
+html.bg-on[data-theme="dark"] input[type="time"],
+html.bg-on[data-theme="dark"] input[type="search"],
+html.bg-on[data-theme="dark"] select {
+  background: rgba(52, 52, 68, .85);
+  color: var(--text);
 }
 
 #app { position: relative; z-index: 1; }
