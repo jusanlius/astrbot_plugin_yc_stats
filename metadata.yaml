@@ -5,7 +5,7 @@ desc: |
   每晚 23:00（可配置）自动把当天战报渲染成二次元风格图片推送到群；
   WebUI 提供群白名单管理页，支持开关记录、调整推送时间、立即预览/推送战报。
 short_desc: #验车 磁力名称记录 + 每日二次元战报图 + 群白名单
-version: v1.0.0
+version: v1.0.1
 author: jusanlius
 repo: https://github.com/jusanlius/astrbot_plugin_yc_stats
 tags:
