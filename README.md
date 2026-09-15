@@ -202,6 +202,7 @@ python tests/make_logo.py              # 重新生成 logo.png
 python tests/make_background_asset.py  # 把素材图处理成 resources/background.jpg
 python tests/bg_variants.py            # 批量对比不同毛玻璃参数下的出图效果
 python tests/make_page_preview.py      # 生成带 mock bridge 的页面预览（浏览器打开 tests/out/page/index.html）
+python tests/pack_zip.py               # 打成可安装/可发布的 zip（自动排除缓存与测试产物）
 ```
 
 测试数据、预览图都落在 `tests/out/`（已在 `.gitignore` 中忽略）。
@@ -214,6 +215,6 @@ python tests/make_page_preview.py      # 生成带 mock bridge 的页面预览�
    `author` 与 `repo` 需与 GitHub 仓库 owner/地址一致（当前为 `jusanlius/astrbot_plugin_yc_stats`）。
 2. 发版时同步更新 `metadata.yaml` 的 `version`，打 tag 并推送。
 3. 到 <https://cloud.astrbot.app/publish> 提交（需注册 AstrBot Cloud）；CI 会校验仓库、元数据，并要求压缩包 ≤ 16MB。
-4. 打包时不要带 `.git`、`__pycache__`、`tests/out/`、`*.zip`（`.gitignore` 已覆盖）。
+4. 打包用 `python tests/pack_zip.py`：自动排除 `.git`、`__pycache__`、`tests/out/`、`*.zip`（`.gitignore` 也覆盖了这些）。
 5. 若改动插件目录名，请同步修改 `main.py` 顶部 `PLUGIN_NAME` 与 `metadata.yaml` 的 `name`
    （两者需一致，Web API 路由前缀与数据目录都依赖它）。
