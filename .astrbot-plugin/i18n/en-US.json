@@ -1,0 +1,13 @@
+{
+  "metadata": {
+    "display_name": "Magnet Check Stats",
+    "desc": "Records the magnet name that follows #验车 in group chats (first 20 characters), counts how many times the same link is sent per day, and pushes an anime-style daily report image to the group every night. A group whitelist management page is available in the WebUI.",
+    "short_desc": "#验车 magnet recorder with anime-style daily report and group whitelist"
+  },
+  "pages": {
+    "whitelist": {
+      "title": "Magnet Check · Group Whitelist",
+      "description": "Manage the group whitelist, tune the push schedule, and preview or push the daily report image."
+    }
+  }
+}

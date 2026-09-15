@@ -1,0 +1,117 @@
+{
+  "enabled": {
+    "type": "bool",
+    "description": "启用验车记录",
+    "default": true,
+    "hint": "关闭后不再记录任何群消息，也不会有定时推送。"
+  },
+  "triggers": {
+    "type": "list",
+    "description": "触发指令",
+    "default": ["#验车", "验车"],
+    "hint": "消息以这些词开头（可带 / 前缀）即视为验车记录请求，例如 #验车 magnet:?xt=... 。"
+  },
+  "name_max_len": {
+    "type": "int",
+    "description": "记录名称最大字数",
+    "default": 20,
+    "hint": "磁力名称只记录前 N 个字（按字符数截断）。"
+  },
+  "whitelist_groups": {
+    "type": "list",
+    "description": "群白名单",
+    "default": [],
+    "hint": "只记录并推送这些群号；留空 = 不限制（所有群都记录，推送给当天有记录的群）。"
+  },
+  "reply_receipt": {
+    "type": "bool",
+    "description": "记录成功后回执",
+    "default": false,
+    "hint": "开启后每条记录都会在群里回一条「已记录」提示（建议人数少的群使用）。"
+  },
+  "block_llm_reply": {
+    "type": "bool",
+    "description": "拦截其他回复",
+    "default": true,
+    "hint": "开启后命中指令的消息不再交给 LLM/其它默认流程处理，避免机器人乱答。"
+  },
+  "today_command": {
+    "type": "bool",
+    "description": "允许群内查询今日榜单",
+    "default": true,
+    "hint": "开启后发送 #验车榜 / #验车战报 会立即返回当天的二次元战报图。"
+  },
+  "push_enabled": {
+    "type": "bool",
+    "description": "启用每日定时推送",
+    "default": true
+  },
+  "push_time": {
+    "type": "string",
+    "description": "每日推送时间",
+    "default": "23:00",
+    "hint": "24 小时制 HH:MM，例如 23:00。机器人需在该时刻保持运行。"
+  },
+  "push_top_n": {
+    "type": "int",
+    "description": "战报图最多显示条数",
+    "default": 15,
+    "hint": "按发送次数从高到低排序后取前 N 条，其余以「其余 N 条」汇总。"
+  },
+  "push_min_count": {
+    "type": "int",
+    "description": "上榜门槛（最小次数）",
+    "default": 1,
+    "hint": "当天发送次数小于该值的链接不进入战报图。"
+  },
+  "push_empty_report": {
+    "type": "bool",
+    "description": "当天无记录也推送",
+    "default": false,
+    "hint": "开启后即使当天没有任何 #验车 记录，也会推送一张空战报图。"
+  },
+  "render_mode": {
+    "type": "string",
+    "description": "出图方式",
+    "default": "auto",
+    "options": ["auto", "html", "pillow"],
+    "hint": "auto = 优先使用 AstrBot 文转图（HTML，效果好，需能访问 t2i 服务）失败自动降级 Pillow 本地绘制；pillow = 始终本地绘制。"
+  },
+  "image_title": {
+    "type": "string",
+    "description": "战报图标题",
+    "default": "今日验车战报"
+  },
+  "background_enabled": {
+    "type": "bool",
+    "description": "使用背景图（毛玻璃底图）",
+    "default": true,
+    "hint": "战报图与插件页面都会使用背景图；关闭后回到粉色渐变底。"
+  },
+  "background_path": {
+    "type": "string",
+    "description": "自定义背景图路径",
+    "default": "",
+    "hint": "留空则依次查找：插件数据目录 background.jpg/png/webp → 插件自带 resources/background.jpg。填相对路径时按插件数据目录解析。"
+  },
+  "background_blur": {
+    "type": "int",
+    "description": "背景图毛玻璃模糊半径",
+    "default": 8,
+    "slider": { "min": 0, "max": 40, "step": 1 },
+    "hint": "像素。越大越朦胧；0 = 只做雾化不模糊。"
+  },
+  "background_dim": {
+    "type": "int",
+    "description": "背景图白色雾化强度",
+    "default": 20,
+    "slider": { "min": 0, "max": 90, "step": 5 },
+    "hint": "0-90。越大背景越白、文字越清楚；推荐 15-40（越大越像牛奶玻璃）。"
+  },
+  "retention_days": {
+    "type": "int",
+    "description": "记录保留天数",
+    "default": 60,
+    "hint": "超过该天数的历史记录会在跨天时自动清理。"
+  }
+}

@@ -1,0 +1,13 @@
+# 统一换行符：仓库内文本一律 LF（AstrBot 多部署在 Linux），避免 Windows 下 CRLF 噪音
+* text=auto eol=lf
+
+# 二进制资源不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ttf binary
+*.otf binary
+*.ttc binary
+*.zip binary

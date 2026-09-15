@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>验车记录统计</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="bg"></div>
+  <div id="bg-frost"></div>
+  <div id="app" hidden>
+    <header class="hdr">
+      <div class="hdr-main">
+        <h1 id="page-title">验车记录统计</h1>
+        <p class="sub">记录 <code>#验车</code> 后面的磁力名称（前 20 字）· 按天统计同一链接次数 · 每日二次元战报图</p>
+      </div>
+      <div class="badges">
+        <span class="pill" id="pill-today">—</span>
+        <span class="pill" id="pill-push">—</span>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>记录与推送设置</h2>
+        <span class="hint" id="settings-hint"></span>
+      </div>
+      <div class="grid">
+        <label class="switch"><input type="checkbox" id="enabled" /><span>启用验车记录</span></label>
+        <label class="switch"><input type="checkbox" id="push_enabled" /><span>启用每日定时推送</span></label>
+        <label class="switch"><input type="checkbox" id="reply_receipt" /><span>记录成功后回执</span></label>
+        <label class="switch"><input type="checkbox" id="block_llm_reply" /><span>拦截其它自动回复</span></label>
+        <label class="switch"><input type="checkbox" id="today_command" /><span>允许 #验车榜 查询</span></label>
+        <label class="switch"><input type="checkbox" id="push_empty_report" /><span>无记录也推送空战报</span></label>
+
+        <label class="field"><span>推送时间</span><input type="time" id="push_time" /></label>
+        <label class="field"><span>上榜条数</span><input type="number" id="push_top_n" min="1" max="50" /></label>
+        <label class="field"><span>上榜门槛（次）</span><input type="number" id="push_min_count" min="1" max="999" /></label>
+        <label class="field"><span>名称字数上限</span><input type="number" id="name_max_len" min="1" max="64" /></label>
+        <label class="field">
+          <span>出图方式</span>
+          <select id="render_mode">
+            <option value="auto">自动（HTML 优先，失败降级 Pillow）</option>
+            <option value="html">仅 AstrBot 文转图（HTML）</option>
+            <option value="pillow">仅本地 Pillow 绘制</option>
+          </select>
+        </label>
+        <label class="field"><span>战报标题</span><input type="text" id="image_title" maxlength="32" /></label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btn-save-settings">保存设置</button>
+        <button class="btn" id="btn-reload">重新载入</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>背景图 · 毛玻璃</h2>
+        <span class="hint" id="bg-hint">战报图与插件页面共用同一张背景图</span>
+      </div>
+      <div class="grid">
+        <label class="switch"><input type="checkbox" id="background_enabled" /><span>启用背景图</span></label>
+        <label class="field"><span>自定义背景图路径（留空用内置图）</span><input type="text" id="background_path" placeholder="例如 background.png（相对插件数据目录）" /></label>
+        <label class="field range">
+          <span>毛玻璃模糊：<b id="bg-blur-value">6</b> px</span>
+          <input type="range" id="background_blur" min="0" max="40" step="1" />
+        </label>
+        <label class="field range">
+          <span>雾化强度（越大越白）：<b id="bg-dim-value">14</b></span>
+          <input type="range" id="background_dim" min="0" max="90" step="5" />
+        </label>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btn-save-background">应用并保存</button>
+        <button class="btn" id="btn-reset-background">恢复默认（6 / 14）</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>群白名单</h2>
+        <span class="hint">只有勾选的群会被记录与推送；一个都不勾选 = 不限制（所有群都记录）</span>
+      </div>
+      <div class="row-inline">
+        <input class="grow" type="search" id="filter" placeholder="搜索群号 / 群名" />
+        <input style="width: 190px" type="text" id="manual-group" placeholder="手动添加群号" />
+        <button class="btn" id="btn-add-group">添加</button>
+        <button class="btn" id="btn-select-all">全选可见</button>
+        <button class="btn" id="btn-clear">清空</button>
+      </div>
+      <div class="table">
+        <div class="thead">
+          <span>加入</span><span>群号</span><span>群名</span><span>今日记录</span><span>来源</span>
+        </div>
+        <div id="group-list" class="tbody"></div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btn-save-whitelist">保存白名单</button>
+        <span class="hint" id="whitelist-hint"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>战报预览与手动推送</h2>
+        <span class="hint">预览只在网页显示，不会发到群里</span>
+      </div>
+      <div class="row-inline">
+        <label class="field inline"><span>日期</span><select id="preview-date"></select></label>
+        <label class="field inline"><span>群</span><select id="preview-group"></select></label>
+        <button class="btn" id="btn-preview">生成预览</button>
+        <button class="btn primary" id="btn-push">立即推送</button>
+        <span class="hint" id="push-result"></span>
+      </div>
+      <div class="detail">
+        <div class="preview"><img id="preview-img" alt="战报预览" hidden /><p id="preview-empty" class="hint">点击「生成预览」查看二次元战报图</p></div>
+        <div class="detail-table">
+          <div class="thead"><span>磁力名称</span><span>次数</span><span>参与人数</span></div>
+          <div id="detail-body" class="tbody"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot" id="foot"></footer>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
