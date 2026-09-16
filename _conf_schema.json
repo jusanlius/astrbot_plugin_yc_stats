@@ -50,7 +50,13 @@
     "type": "string",
     "description": "每日推送时间",
     "default": "23:00",
-    "hint": "24 小时制 HH:MM，例如 23:00。机器人需在该时刻保持运行。"
+    "hint": "24 小时制 HH:MM，按下面的「推送时区」解释（时区留空则按服务器本地时间）。机器人需在该时刻保持运行。"
+  },
+  "push_timezone": {
+    "type": "string",
+    "description": "推送时区",
+    "default": "",
+    "hint": "留空 = 跟随服务器本地时间（VPS 多为 UTC，此时填 23:00 等于北京次日 7 点）。可填 UTC / Asia/Shanghai / +08:00 等；填了之后「每日推送时间」和「一天」的划分都按该时区。北京时间请填 Asia/Shanghai 或 +08:00。"
   },
   "push_top_n": {
     "type": "int",

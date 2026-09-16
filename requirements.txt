@@ -1,2 +1,6 @@
 # 本地 Pillow 兜底出图（HTML 文转图不可用时使用）
 Pillow>=9.2.0
+
+# 「推送时区」填 IANA 名称（如 Asia/Shanghai）时需要时区数据库；
+# Linux 一般自带系统 tzdata，Windows / macOS 装这个包即可（用固定偏移如 +08:00 时不需要）
+tzdata>=2024.1; platform_system != "Linux"

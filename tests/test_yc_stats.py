@@ -22,6 +22,7 @@ import shutil
 import sys
 import time
 import types
+from datetime import timedelta
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
@@ -722,6 +723,37 @@ async def main():
         "#验车状态 返回自检信息",
         status_text[:120],
     )
+
+    print("== 8.7 推送时区 ==")
+    plugin_tz, _, cfg_tz = make_plugin(module, push_timezone="+08:00")
+    check(plugin_tz._now().utcoffset() == timedelta(hours=8), "固定偏移 +08:00 生效",
+          str(plugin_tz._now().utcoffset()))
+    check(plugin_tz._today() == plugin_tz._now().strftime("%Y-%m-%d"), "日期跟随推送时区")
+    cfg_tz["push_timezone"] = "UTC"
+    check(plugin_tz._now().utcoffset() == timedelta(0), "UTC 时区生效")
+    cfg_tz["push_timezone"] = "-05:00"
+    check(plugin_tz._now().utcoffset() == timedelta(hours=-5), "负数偏移生效")
+    cfg_tz["push_timezone"] = "garbage/zone"
+    check(plugin_tz._zone() is None, "非法时区回退服务器本地时间")
+    cfg_tz["push_timezone"] = ""
+    check(plugin_tz._zone() is None, "留空 = 跟随服务器本地时间")
+    cfg_tz["push_timezone"] = "Asia/Shanghai"
+    zone = plugin_tz._zone()
+    if zone is None:
+        print("  SKIP  未安装 tzdata，跳过 IANA 命名时区检查")
+    else:
+        check(
+            plugin_tz._now().utcoffset() == timedelta(hours=8),
+            "Asia/Shanghai（北京时间）生效",
+            str(zone),
+        )
+        # 北京时间 23:00 = UTC 15:00
+        cfg_tz["push_timezone"] = "UTC"
+        cfg_tz["push_time"] = "15:00"
+        check(
+            int(module._parse_push_time(cfg_tz["push_time"])[0]) + 8 == 23,
+            "UTC 15:00 == 北京时间 23:00",
+        )
 
     print("== 9. HTML 模板 ==")
     try:

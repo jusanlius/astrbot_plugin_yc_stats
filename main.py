@@ -27,8 +27,10 @@ import json
 import random
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
+
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote
@@ -327,7 +329,12 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
 
 
 def _today_str() -> str:
-    """返回本地日期字符串（YYYY-MM-DD）。"""
+    """返回服务器本地日期字符串（YYYY-MM-DD）。
+
+    Note:
+        插件内部一律用 ``self._today()``（跟随「推送时区」配置）；
+        本函数只作为不依赖插件实例的兜底工具。
+    """
     return datetime.now().strftime("%Y-%m-%d")
 
 
@@ -490,10 +497,14 @@ class YcStatsPlugin(Star):
             self._scheduler_loop(), name=f"{PLUGIN_NAME}-scheduler"
         )
         now = datetime.now()
+        zone = self._zone()
+        zone_text = (
+            f"{self._cfg('push_timezone')}（{self._now():%Y-%m-%d %H:%M}）" if zone else "服务器本地时间"
+        )
         logger.info(
             f"[{PLUGIN_NAME}] 已启动：记录={'开' if self._cfg('enabled', True) else '关'}"
             f"，定时推送={'开' if self._cfg('push_enabled', True) else '关'}"
-            f"，推送时间 {self._cfg('push_time', DEFAULT_PUSH_TIME)}"
+            f"，推送时间 {self._cfg('push_time', DEFAULT_PUSH_TIME)} → 按 {zone_text} 执行"
             f"（服务器本地时间 {now:%Y-%m-%d %H:%M}，时区 {time.tzname[0]}）"
             f"，白名单 {self._whitelist() or '（空=不限制）'}，数据目录 {self.data_dir}"
         )
@@ -539,6 +550,51 @@ class YcStatsPlugin(Star):
         if not words:
             words = list(DEFAULT_TRIGGERS)
         return sorted(set(words), key=len, reverse=True)
+
+    def _zone(self):
+        """解析「推送时区」配置。
+
+        Returns:
+            tzinfo 对象；未配置或解析失败时返回 ``None``（= 跟随服务器本地时间）。
+
+        Note:
+            支持 ``UTC`` / ``Asia/Shanghai`` 这类 IANA 名称，也支持 ``+08:00`` / ``-05:00``
+            这种固定偏移写法；Windows/macOS 上用 IANA 名称需要 ``tzdata``（已写进 requirements.txt）。
+        """
+        raw = str(self._cfg("push_timezone", "") or "").strip()
+        if not raw or raw.lower() in ("local", "server", "system", "服务器", "本地"):
+            return None
+        # UTC/GMT 等零偏移别名：不依赖 tzdata，任何平台都能用
+        if raw.lower() in ("utc", "gmt", "z", "utc+0", "utc+00:00"):
+            return timezone(timedelta(0), name="UTC")
+        match = re.fullmatch(r"([+-])(\d{1,2})(?::?(\d{2}))?", raw)
+        if match:
+            sign = 1 if match.group(1) == "+" else -1
+            hours = int(match.group(2))
+            minutes = int(match.group(3) or 0)
+            if hours > 14 or minutes > 59:
+                logger.warning(
+                    f"[{PLUGIN_NAME}] 推送时区偏移不合法 {raw!r}，已回退为服务器本地时间"
+                )
+                return None
+            return timezone(sign * timedelta(hours=hours, minutes=minutes), name=raw)
+        try:
+            return ZoneInfo(raw)
+        except Exception:
+            logger.warning(
+                f"[{PLUGIN_NAME}] 无法识别的推送时区 {raw!r}（可用 UTC / +08:00 / Asia/Shanghai），"
+                "已回退为服务器本地时间"
+            )
+            return None
+
+    def _now(self) -> datetime:
+        """返回「推送时区」下的当前时间（未配置时等于服务器本地时间）。"""
+        zone = self._zone()
+        return datetime.now(zone) if zone else datetime.now()
+
+    def _today(self) -> str:
+        """返回「推送时区」下的日期字符串（YYYY-MM-DD）。"""
+        return self._now().strftime("%Y-%m-%d")
 
     def _whitelist(self) -> list[str]:
         """返回群白名单（字符串群号列表，去重）。"""
@@ -638,7 +694,7 @@ class YcStatsPlugin(Star):
     def _prune_store(self) -> None:
         """按保留天数清理历史记录，并清理过期图片。"""
         keep_days = max(1, int(self._cfg("retention_days", 60) or 60))
-        deadline = (datetime.now() - timedelta(days=keep_days)).strftime("%Y-%m-%d")
+        deadline = (self._now() - timedelta(days=keep_days)).strftime("%Y-%m-%d")
         days = self._store.get("days", {})
         for day in [d for d in days if d < deadline]:
             days.pop(day, None)
@@ -706,7 +762,7 @@ class YcStatsPlugin(Star):
                 yield event.plain_result(reason)
                 return
             await self._remember_group(event)
-            sent = await self._push_groups([group_id], _today_str(), force=True)
+            sent = await self._push_groups([group_id], self._today(), force=True)
             if sent and sent[0].get("ok"):
                 yield event.plain_result("战报已推送。")
             else:
@@ -741,7 +797,7 @@ class YcStatsPlugin(Star):
 
         whitelist = self._whitelist()
         if whitelist and group_id not in whitelist:
-            key = f"{_today_str()}:{group_id}"
+            key = f"{self._today()}:{group_id}"
             if key not in self._whitelist_skip_logged:
                 self._whitelist_skip_logged.add(key)
                 logger.info(
@@ -810,7 +866,7 @@ class YcStatsPlugin(Star):
         if offset:
             total_minutes = int(abs(offset.total_seconds()) // 60)
             offset_text += f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
-        day = _today_str()
+        day = self._today()
         bucket = self._store.get("days", {}).get(day, {}).get(str(group_id), {})
         total = sum(int(item.get("count", 0)) for item in bucket.values())
         whitelist = self._whitelist()
@@ -832,11 +888,17 @@ class YcStatsPlugin(Star):
         lines = [
             "📋 验车记录插件自检",
             f"服务器本地时间：{now:%Y-%m-%d %H:%M}:{now.second:02d}（{offset_text}）",
+            (
+                f"推送时区：{self._cfg('push_timezone')} → {self._now():%Y-%m-%d %H:%M}"
+                if self._zone()
+                else "推送时区：服务器本地时间（未配置或该时区无法解析）"
+            ),
             f"记录开关：{'开' if self._cfg('enabled', True) else '关'} · 名称上限 "
             f"{int(self._cfg('name_max_len', DEFAULT_NAME_MAX_LEN) or DEFAULT_NAME_MAX_LEN)} 字"
             f" · 触发词 {self._triggers()}",
             f"定时推送：{'开' if self._cfg('push_enabled', True) else '关'} · 每日 "
-            f"{self._cfg('push_time', DEFAULT_PUSH_TIME)}（服务器本地时间）"
+            f"{self._cfg('push_time', DEFAULT_PUSH_TIME)}"
+            f"（{'按 ' + str(self._cfg('push_timezone')) if self._zone() else '按服务器本地时间'}）"
             f" · 门槛 {int(self._cfg('push_min_count', 1) or 1)} 次"
             f" · 最多 {int(self._cfg('push_top_n', 15) or 15)} 条"
             f" · 空战报 {'开' if self._cfg('push_empty_report', False) else '关'}",
@@ -992,7 +1054,7 @@ class YcStatsPlugin(Star):
             ``(记录条目, 是否为重复发送)``。
         """
         await self._remember_group(event, group_id)
-        day = _today_str()
+        day = self._today()
         self._prune_if_needed(day)
 
         bucket = self._store["days"].setdefault(day, {}).setdefault(group_id, {})
@@ -1203,7 +1265,7 @@ class YcStatsPlugin(Star):
                 }
                 for index, item in enumerate(rows)
             ],
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "generated_at": self._now().strftime("%Y-%m-%d %H:%M"),
         }
 
     async def _render_report(self, report: dict) -> Path | None:
@@ -1705,7 +1767,7 @@ class YcStatsPlugin(Star):
         Returns:
             AstrBot 消息结果。
         """
-        report = self._build_report(event.get_group_id(), _today_str())
+        report = self._build_report(event.get_group_id(), self._today())
         path = await self._render_report(report)
         if path is None:
             return event.plain_result("战报图生成失败，请查看 AstrBot 日志。")
@@ -1737,11 +1799,11 @@ class YcStatsPlugin(Star):
         """
         if not self._cfg("push_enabled", True):
             return
-        day = _today_str()
+        day = self._today()
         if self._store.get("last_seen_day") != day:
             self._prune_if_needed(day)
         hour, minute = _parse_push_time(self._cfg("push_time", DEFAULT_PUSH_TIME))
-        now = datetime.now()
+        now = self._now()
         if (now.hour, now.minute) < (hour, minute):
             return
 
@@ -1995,7 +2057,7 @@ class YcStatsPlugin(Star):
         Returns:
             JSON 响应。
         """
-        day = _today_str()
+        day = self._today()
         days = self._store.get("days", {})
         today = days.get(day, {})
         live_groups = await self._live_groups()
@@ -2085,7 +2147,7 @@ class YcStatsPlugin(Star):
         Returns:
             JSON 响应。
         """
-        day = request.query.get("date") or _today_str()
+        day = request.query.get("date") or self._today()
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(day)):
             return error_response("date 必须是 YYYY-MM-DD 格式")
         group_id = request.query.get("group_id") or ""
@@ -2210,7 +2272,7 @@ class YcStatsPlugin(Star):
             JSON 响应。
         """
         payload = await request.json(default={})
-        day = _today_str()
+        day = self._today()
         group_id = ""
         if isinstance(payload, dict):
             if payload.get("date"):
@@ -2254,7 +2316,7 @@ class YcStatsPlugin(Star):
             JSON 响应。
         """
         payload = await request.json(default={})
-        day = _today_str()
+        day = self._today()
         groups: list[str] | None = None
         if isinstance(payload, dict):
             if payload.get("date"):
