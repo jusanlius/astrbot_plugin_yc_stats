@@ -177,36 +177,38 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
   .poster.has-bg .head {
     margin: 0 0 12px; padding: 14px 12px 14px;
     border-radius: 24px;
-    background: rgba(255, 255, 255, .34);
-    border: 1px solid rgba(255, 255, 255, .55);
+    background: rgba(255, 255, 255, .58);
+    border: 1px solid rgba(255, 255, 255, .72);
     backdrop-filter: blur(10px) saturate(1.1);
     box-shadow: 0 8px 22px rgba(120, 110, 170, .12);
   }
   .tag {
     display: inline-block; padding: 3px 14px; border-radius: 999px;
-    font-size: 12px; letter-spacing: 2px; color: #b3578a;
-    background: rgba(255, 255, 255, .58); border: 1px solid rgba(255, 255, 255, .85);
+    font-size: 12px; letter-spacing: 2px; color: #a8447b;
+    background: rgba(255, 255, 255, .78); border: 1px solid rgba(255, 255, 255, .9);
     backdrop-filter: blur(14px) saturate(1.15);
   }
   h1 {
     margin: 10px 0 6px; font-size: 34px; letter-spacing: 2px;
-    background: linear-gradient(90deg, #ff7fb6 0%, #b57bff 55%, #7fb6ff 100%);
-    -webkit-background-clip: text; background-clip: text; color: #c96ba6;
+    font-weight: 800;
+    background: linear-gradient(90deg, #f5629f 0%, #9a6bff 55%, #5c9dff 100%);
+    -webkit-background-clip: text; background-clip: text; color: #c2468f;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, .55);
   }
-  .sub { font-size: 15px; color: #8b7c94; letter-spacing: 1px; }
+  .sub { font-size: 15px; color: #544761; letter-spacing: 1px; font-weight: 600; }
   .stats { display: flex; gap: 12px; margin: 4px 0 16px; }
   .stat {
     flex: 1; padding: 12px 8px; border-radius: 18px; text-align: center;
-    background: rgba(255, 255, 255, .60); border: 1px solid rgba(255, 255, 255, .88);
+    background: rgba(255, 255, 255, .76); border: 1px solid rgba(255, 255, 255, .9);
     box-shadow: 0 6px 16px rgba(150, 130, 190, .16);
     backdrop-filter: blur(16px) saturate(1.15);
   }
-  .stat .num { font-size: 26px; font-weight: 700; color: #e0669f; }
-  .stat .lab { margin-top: 2px; font-size: 12px; color: #8b7c94; }
+  .stat .num { font-size: 27px; font-weight: 800; color: #d94f92; }
+  .stat .lab { margin-top: 2px; font-size: 12.5px; color: #63556f; font-weight: 600; }
   .list { display: flex; flex-direction: column; gap: 9px; flex: 0 0 auto; }
   .row {
     display: flex; align-items: center; gap: 12px; padding: 9px 14px;
-    border-radius: 16px; background: rgba(255, 255, 255, .58);
+    border-radius: 16px; background: rgba(255, 255, 255, .74);
     border: 1px solid rgba(255, 255, 255, .88);
     box-shadow: 0 4px 12px rgba(150, 130, 190, .14);
     backdrop-filter: blur(16px) saturate(1.15);
@@ -221,17 +223,19 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
   .r3 .rank { background: linear-gradient(135deg, #f4b183, #d98b5f); }
   .main { flex: 1; min-width: 0; }
   .name {
-    font-size: 17px; line-height: 1.35; color: #4a3b52;
+    font-size: 17.5px; line-height: 1.35; color: #342a3e; font-weight: 600;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, .75);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .bar { height: 6px; margin-top: 6px; border-radius: 999px; background: #f2e6f0; overflow: hidden; }
+  .bar { height: 6px; margin-top: 6px; border-radius: 999px; background: #e8d9e8; overflow: hidden; }
   .bar i { display: block; height: 100%; border-radius: 999px;
-           background: linear-gradient(90deg, #ffa8cd, #b79bff); }
+           background: linear-gradient(90deg, #ff86bf, #a480ff); }
   .count {
-    flex: 0 0 auto; padding: 5px 12px; border-radius: 999px; font-size: 16px; font-weight: 700;
-    color: #fff; background: linear-gradient(135deg, #ff8fc0, #b07bff);
+    flex: 0 0 auto; padding: 5px 12px; border-radius: 999px; font-size: 16px; font-weight: 800;
+    color: #fff; background: linear-gradient(135deg, #f56ba8, #8b5cf6);
+    box-shadow: 0 2px 8px rgba(139, 92, 246, .28);
   }
-  .more { margin-top: 10px; text-align: center; font-size: 13px; color: #9a8aa3; }
+  .more { margin-top: 10px; text-align: center; font-size: 13px; color: #5f5069; font-weight: 600; }
   .empty {
     flex: 1;
     display: flex; flex-direction: column;
@@ -258,23 +262,29 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
                border: 2px solid #ffd0e4; }
   .face .ear.l { left: 8px; border-radius: 70% 20% 60% 30%; transform: rotate(-16deg); }
   .face .ear.r { right: 8px; border-radius: 20% 70% 30% 60%; transform: rotate(16deg); }
-  .empty-title { font-size: 21px; color: #b3578a; }
-  .empty-sub { margin-top: 6px; font-size: 14px; color: #9a8aa3; }
+  .empty-title { font-size: 21px; color: #9c3d72; font-weight: 700; }
+  .empty-sub { margin-top: 6px; font-size: 14px; color: #5d4d68; font-weight: 600; }
   footer {
     display: flex; justify-content: space-between; align-items: center;
     margin-top: auto;                 /* 撑满视口时把页脚压到底部，内容与页脚之间留白 */
-    padding-top: 12px; border-top: 1px dashed #f0d9e8;
-    font-size: 12px; color: #9a8aa3;
+    padding-top: 12px; border-top: 1px dashed #e4cde0;
+    font-size: 12.5px; color: #5d4d68; font-weight: 600;
   }
-  /* 有背景图时：底部说明与「更多」提示加白晕，保证在照片上也看得清 */
-  .poster.has-bg footer,
+  /* 有背景图时：页脚自带一块毛玻璃底，说明文字不再直接压在照片上 */
+  .poster.has-bg footer {
+    padding: 9px 14px; border-top: none; border-radius: 14px;
+    background: rgba(255, 255, 255, .74);
+    border: 1px solid rgba(255, 255, 255, .86);
+    backdrop-filter: blur(12px) saturate(1.1);
+    color: #463a52;
+  }
+  /* 有背景图时：其余说明文字加深 + 白晕，保证在照片上也看得清 */
   .poster.has-bg .more,
   .poster.has-bg .sub,
   .poster.has-bg .empty-sub {
-    color: #6d5b78;
+    color: #463a52;
     text-shadow: 0 1px 8px rgba(255, 255, 255, .95);
   }
-  .poster.has-bg footer { border-top-color: rgba(255, 255, 255, .75); }
   .poster.has-bg .blob { opacity: .3; }
 </style>
 </head>
@@ -1344,7 +1354,7 @@ class YcStatsPlugin(Star):
             "bg_uri": await self._background_uri(),
             "bg_blur": self._background_blur(),
             "bg_dim": self._background_dim(),
-            "bg_alpha": round(min(0.55, max(0.0, self._background_dim() / 180)), 2),
+            "bg_alpha": round(min(0.55, max(0.12, 0.10 + self._background_dim() / 140)), 2),
             "rows": [
                 {**row, "name": html_lib.escape(row["name"])} for row in report["rows"]
             ],
@@ -1402,7 +1412,11 @@ class YcStatsPlugin(Star):
             canvas = _cover_crop(bg_image, width, height, BACKGROUND_FOCAL_X).convert("RGBA")
             if bg_blur > 0:
                 canvas = canvas.filter(ImageFilter.GaussianBlur(bg_blur))
-            wash = PILImage.new("RGBA", (width, height), (255, 255, 255, round(255 * bg_dim / 100)))
+            wash = PILImage.new(
+                "RGBA",
+                (width, height),
+                (255, 255, 255, round(255 * min(0.55, max(0.12, 0.10 + bg_dim / 140)))),
+            )
             canvas = PILImage.alpha_composite(canvas, wash)
             from PIL import ImageEnhance
 
@@ -1472,7 +1486,7 @@ class YcStatsPlugin(Star):
         sub_font = self._load_font(17)
         num_font = self._load_font(30)
         lab_font = self._load_font(14)
-        name_font = self._load_font(21)
+        name_font = self._load_font(22)
         count_font = self._load_font(19)
         foot_font = self._load_font(13)
 
@@ -1505,7 +1519,7 @@ class YcStatsPlugin(Star):
             f"{report['date']} · {report['group_name']}",
             118,
             sub_font,
-            (110, 96, 124) if has_bg else (139, 124, 148),
+            (70, 58, 82) if has_bg else (120, 106, 132),
             shadow=has_bg,
         )
 
@@ -1522,7 +1536,7 @@ class YcStatsPlugin(Star):
             draw.rounded_rectangle(
                 [left, chip_top, left + chip_width, chip_top + chip_height],
                 radius=20,
-                fill=(255, 255, 255, 172 if has_bg else 225),
+                fill=(255, 255, 255, 202 if has_bg else 225),
                 outline=(255, 255, 255, 225) if has_bg else (255, 255, 255, 250),
                 width=2 if has_bg else 1,
             )
@@ -1538,7 +1552,7 @@ class YcStatsPlugin(Star):
                 (left + (chip_width - label_width) / 2, chip_top + 54),
                 label,
                 font=lab_font,
-                fill=(139, 124, 148),
+                fill=(99, 85, 111),
             )
 
         if rows:
@@ -1548,7 +1562,7 @@ class YcStatsPlugin(Star):
                 draw.rounded_rectangle(
                     [40, top, width - 40, top + row_step - 12],
                     radius=18,
-                    fill=(255, 255, 255, 196 if has_bg else 214),
+                    fill=(255, 255, 255, 214 if has_bg else 214),
                     outline=(255, 255, 255, 235) if has_bg else (255, 255, 255, 250),
                     width=2 if has_bg else 1,
                 )
@@ -1570,7 +1584,7 @@ class YcStatsPlugin(Star):
                 )
                 # 名称
                 name_text = self._fit_text(draw, row["name"], name_font, width - 300)
-                draw.text((102, top + 14), name_text, font=name_font, fill=(74, 59, 82))
+                draw.text((102, top + 13), name_text, font=name_font, fill=(52, 42, 62))
                 # 进度条
                 bar_left, bar_top, bar_width, bar_height = 102, top + 44, width - 300, 7
                 draw.rounded_rectangle(
@@ -1676,7 +1690,7 @@ class YcStatsPlugin(Star):
                 fill=(154, 138, 163),
             )
 
-        footer_text_color = (110, 96, 124) if has_bg else (154, 138, 163)
+        footer_text_color = (70, 58, 82) if has_bg else (120, 106, 132)
 
         def footer_text(text: str, x: float, y: int) -> None:
             if has_bg:
