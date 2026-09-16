@@ -72,6 +72,12 @@ DEFAULT_NAME_MAX_LEN = 20
 DEFAULT_BACKGROUND_BLUR = 6
 DEFAULT_BACKGROUND_DIM = 14
 
+PUSH_MAX_ATTEMPTS = 3
+"""每日推送最多尝试次数（全部失败后当天不再重试）。"""
+
+PUSH_RETRY_INTERVAL_SECONDS = 300
+"""推送失败/无目标时的重试间隔（秒）。"""
+
 MAGNET_RE = re.compile(r"magnet:\?[^\s\u3000<>\"'）】]+", re.IGNORECASE)
 BTIH_RE = re.compile(r"urn:btih:([0-9a-zA-Z]{32,40})", re.IGNORECASE)
 HEX40_RE = re.compile(r"(?<![0-9a-zA-Z])([0-9a-fA-F]{40})(?![0-9a-zA-Z])")
@@ -80,6 +86,7 @@ TRIM_CHARS = " \u3000\t:：-—–|/,，。.、;；"
 
 PREVIEW_WORDS = ("榜", "榜单", "报表", "战报", "统计", "排行", "排行榜")
 PUSH_WORDS = ("推送", "立即推送", "马上推送")
+STATUS_WORDS = ("状态", "诊断", "自检")
 
 ANIME_TEMPLATE = """<!DOCTYPE html>
 <html lang="zh-CN">
@@ -443,6 +450,7 @@ class YcStatsPlugin(Star):
         self._scheduler_task: asyncio.Task | None = None
         self._live_groups_cache: tuple[float, list[dict]] = (0.0, [])
         self._font_warned = False
+        self._whitelist_skip_logged: set[str] = set()
         self._background_cache: tuple[str, float, Any] = ("", 0.0, None)
         self._background_uri_cache: tuple[float, str] = (0.0, "")
         self._store = self._empty_store()
@@ -690,6 +698,14 @@ class YcStatsPlugin(Star):
                 yield event.plain_result(f"推送失败：{reason}")
             return
 
+        if kind == "status":
+            allowed, reason = await self._can_manual_push(event)
+            if not allowed:
+                yield event.plain_result(reason)
+                return
+            yield event.plain_result(await self._status_text(event, group_id))
+            return
+
         if kind == "empty":
             yield event.plain_result(
                 "用法：#验车 <磁力链接>\n"
@@ -709,7 +725,13 @@ class YcStatsPlugin(Star):
 
         whitelist = self._whitelist()
         if whitelist and group_id not in whitelist:
-            logger.debug(f"[{PLUGIN_NAME}] 群 {group_id} 不在白名单，忽略记录")
+            key = f"{_today_str()}:{group_id}"
+            if key not in self._whitelist_skip_logged:
+                self._whitelist_skip_logged.add(key)
+                logger.info(
+                    f"[{PLUGIN_NAME}] 群 {group_id} 不在白名单 {whitelist}，已忽略其 #验车 记录"
+                    "（如需记录本群，请把该群号加入白名单，或在插件页勾选该群）"
+                )
             return
 
         entry, repeat = await self._record(event, group_id, parsed)
@@ -756,6 +778,66 @@ class YcStatsPlugin(Star):
             return False, "只有群主/群管理员（或 AstrBot 管理员）可以手动推送战报。"
         return True, ""
 
+    async def _status_text(self, event: AstrMessageEvent, group_id: str) -> str:
+        """生成一条自检信息，用于在群里排查「为什么没有推送」。
+
+        Args:
+            event: 群消息事件。
+            group_id: 当前群号。
+
+        Returns:
+            供 `#验车状态` 直接回给群聊的多行文本。
+        """
+        now = datetime.now()
+        offset = now.astimezone().utcoffset()
+        offset_text = f"UTC{'+' if (offset and offset.total_seconds() >= 0) else '-'}"
+        if offset:
+            total_minutes = int(abs(offset.total_seconds()) // 60)
+            offset_text += f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
+        day = _today_str()
+        bucket = self._store.get("days", {}).get(day, {}).get(str(group_id), {})
+        total = sum(int(item.get("count", 0)) for item in bucket.values())
+        whitelist = self._whitelist()
+        umo = await self._resolve_umo(group_id)
+        state = self._store.get("push_state") or {}
+        if state.get("day") == day:
+            if state.get("done"):
+                push_progress = "今天已推送 ✅"
+            elif int(state.get("attempts", 0)) >= PUSH_MAX_ATTEMPTS:
+                push_progress = f"今天已重试 {PUSH_MAX_ATTEMPTS} 次仍失败 ❌"
+            elif state.get("attempts"):
+                push_progress = f"已尝试 {state['attempts']} 次，等待重试"
+            else:
+                push_progress = "今天尚未到推送时间"
+            last_results = state.get("last_results") or []
+        else:
+            push_progress = "今天尚未推送"
+            last_results = []
+        lines = [
+            "📋 验车记录插件自检",
+            f"服务器本地时间：{now:%Y-%m-%d %H:%M}:{now.second:02d}（{offset_text}）",
+            f"记录开关：{'开' if self._cfg('enabled', True) else '关'} · 名称上限 "
+            f"{int(self._cfg('name_max_len', DEFAULT_NAME_MAX_LEN) or DEFAULT_NAME_MAX_LEN)} 字"
+            f" · 触发词 {self._triggers()}",
+            f"定时推送：{'开' if self._cfg('push_enabled', True) else '关'} · 每日 "
+            f"{self._cfg('push_time', DEFAULT_PUSH_TIME)}（服务器本地时间）"
+            f" · 门槛 {int(self._cfg('push_min_count', 1) or 1)} 次"
+            f" · 最多 {int(self._cfg('push_top_n', 15) or 15)} 条"
+            f" · 空战报 {'开' if self._cfg('push_empty_report', False) else '关'}",
+            f"群白名单：{whitelist if whitelist else '（空 = 不限制）'}",
+            f"本群 {group_id}：{'✅ 在白名单内' if (not whitelist or str(group_id) in whitelist) else '❌ 不在白名单内，不会记录'}",
+            f"今日记录：{len(bucket)} 条链接 / 共 {total} 次",
+            f"推送会话：{umo or '⚠️ 未解析到（机器人需在本群收发过消息，或群号不在机器人群列表中）'}",
+            f"今日推送状态：{push_progress}",
+        ]
+        if last_results:
+            detail = "；".join(
+                f"{item.get('group_id')}: {'成功' if item.get('ok') else item.get('error') or '失败'}"
+                for item in last_results[:5]
+            )
+            lines.append(f"最近一次结果：{detail}")
+        return "\n".join(lines)
+
     def _match_trigger(self, raw_text: str) -> tuple[str, str] | None:
         """判断消息是否命中验车指令。
 
@@ -783,6 +865,8 @@ class YcStatsPlugin(Star):
                     return "preview", ""
                 if head in PUSH_WORDS:
                     return "push", ""
+                if head in STATUS_WORDS:
+                    return "status", ""
                 return "record", head
         return None
 
@@ -1630,34 +1714,76 @@ class YcStatsPlugin(Star):
         """判断是否到达推送时间，满足条件则推送当天战报。
 
         Note:
-            只看 ``push_enabled`` / ``push_time``，与记录开关 ``enabled`` 无关：
-            关掉记录也应该照常推送（当天没记录时按 ``push_empty_report`` 决定）。
+            只看 ``push_enabled`` / ``push_time``，与记录开关 ``enabled`` 无关。
+            只有「至少有一个群推送成功」才会把当天标记为已完成；全部失败会按
+            ``PUSH_RETRY_INTERVAL_SECONDS`` 重试，最多 ``PUSH_MAX_ATTEMPTS`` 次，
+            避免因为一次网络抖动/会话未就绪就整天不再推送。
         """
         if not self._cfg("push_enabled", True):
             return
         day = _today_str()
-        if self._store.get("last_push_day") == day:
-            return
         if self._store.get("last_seen_day") != day:
             self._prune_if_needed(day)
         hour, minute = _parse_push_time(self._cfg("push_time", DEFAULT_PUSH_TIME))
         now = datetime.now()
         if (now.hour, now.minute) < (hour, minute):
             return
-        self._store["last_push_day"] = day
-        await self._save_store()
+
+        state = self._store.get("push_state")
+        if not isinstance(state, dict) or state.get("day") != day:
+            state = {"day": day, "attempts": 0, "next_ts": 0.0, "done": False}
+            self._store["push_state"] = state
+        if state.get("done"):
+            return
+        if int(state.get("attempts", 0)) >= PUSH_MAX_ATTEMPTS:
+            if not state.get("capped_logged"):
+                state["capped_logged"] = True
+                await self._save_store()
+                logger.warning(
+                    f"[{PLUGIN_NAME}] {day} 已尝试推送 {PUSH_MAX_ATTEMPTS} 次仍失败，"
+                    f"今天不再重试；最近一次结果 {state.get('last_results')}"
+                )
+            return
+        if time.time() < float(state.get("next_ts") or 0):
+            return
+
         targets = self._push_targets(day)
+        state["attempts"] = int(state.get("attempts", 0)) + 1
         if not targets:
+            state["next_ts"] = time.time() + PUSH_RETRY_INTERVAL_SECONDS
+            state["last_results"] = []
+            await self._save_store()
             logger.warning(
-                f"[{PLUGIN_NAME}] {day} 没有推送目标（白名单为空且当天无记录），已跳过每日推送"
+                f"[{PLUGIN_NAME}] {day} 没有推送目标（白名单为空且当天无记录），"
+                f"{PUSH_RETRY_INTERVAL_SECONDS // 60} 分钟后重试"
             )
             return
+
         logger.info(
-            f"[{PLUGIN_NAME}] 开始每日推送 {day}（服务器本地时间 {now:%Y-%m-%d %H:%M}），目标群 {targets}"
+            f"[{PLUGIN_NAME}] 开始每日推送 {day}（服务器本地时间 {now:%Y-%m-%d %H:%M}，"
+            f"第 {state['attempts']} 次尝试），目标群 {targets}"
         )
         results = await self._push_groups(targets, day)
         ok_count = sum(1 for item in results if item.get("ok"))
-        logger.info(f"[{PLUGIN_NAME}] 每日推送结束：成功 {ok_count}/{len(results)}，明细 {results}")
+        state["last_results"] = results
+        if ok_count:
+            state["done"] = True
+            self._store["last_push_day"] = day
+            logger.info(f"[{PLUGIN_NAME}] 每日推送完成：成功 {ok_count}/{len(results)}，明细 {results}")
+        else:
+            if state["attempts"] >= PUSH_MAX_ATTEMPTS:
+                state["capped_logged"] = True
+                logger.warning(
+                    f"[{PLUGIN_NAME}] 每日推送已尝试 {PUSH_MAX_ATTEMPTS} 次仍全部失败，"
+                    f"今天不再重试；最近结果 {results}"
+                )
+            else:
+                state["next_ts"] = time.time() + PUSH_RETRY_INTERVAL_SECONDS
+                logger.warning(
+                    f"[{PLUGIN_NAME}] 每日推送失败：成功 0/{len(results)}，"
+                    f"{PUSH_RETRY_INTERVAL_SECONDS // 60} 分钟后重试，明细 {results}"
+                )
+        await self._save_store()
 
     def _push_targets(self, day: str) -> list[str]:
         """计算推送目标群列表。

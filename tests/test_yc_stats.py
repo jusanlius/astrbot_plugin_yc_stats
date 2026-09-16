@@ -20,6 +20,7 @@ import json
 import os
 import shutil
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -155,12 +156,16 @@ class Context:
     def __init__(self):
         self.routes: dict[str, tuple] = {}
         self.sent: list[tuple[str, MessageChain]] = []
+        self.fail_sends = 0
         self.platform_manager = types.SimpleNamespace(get_insts=lambda: [])
 
     def register_web_api(self, route, handler, methods, desc):
         self.routes[route] = (handler, methods, desc)
 
     async def send_message(self, session, chain):
+        if self.fail_sends > 0:
+            self.fail_sends -= 1
+            raise RuntimeError("stub: 模拟发送失败")
         self.sent.append((session, chain))
         return True
 
@@ -656,6 +661,67 @@ async def main():
     sent_before = len(ctx.sent)
     await plugin._maybe_daily_push()
     check(len(ctx.sent) == sent_before, "同一天不重复推送")
+
+    print("== 8.5 推送重试状态机 ==")
+    plugin_r, ctx_r, cfg_r = make_plugin(
+        module, whitelist_groups=["123456"], push_empty_report=True
+    )
+    # 模拟「该群会话已被记录」（机器人此前在本群收发过消息）
+    plugin_r._store["groups"]["123456"] = {
+        "umo": "aiocqhttp:GroupMessage:123456",
+        "name": "测试群",
+    }
+    cfg_r["push_enabled"] = True
+    cfg_r["push_time"] = "00:00"
+    ctx_r.fail_sends = 1
+    await plugin_r._maybe_daily_push()
+    state = plugin_r._store.get("push_state") or {}
+    check(
+        state.get("attempts") == 1 and not state.get("done") and state.get("next_ts", 0) > time.time(),
+        "推送失败：不标记完成 + 安排重试",
+        str(state),
+    )
+    check(
+        plugin_r._store.get("last_push_day") != module._today_str(),
+        "推送失败不写 last_push_day（当天可重试）",
+    )
+    state["next_ts"] = 0  # 模拟重试时间已到
+    await plugin_r._maybe_daily_push()
+    check(
+        (plugin_r._store.get("push_state") or {}).get("done") is True
+        and plugin_r._store.get("last_push_day") == module._today_str(),
+        "重试成功后标记当天完成",
+        str(plugin_r._store.get("push_state")),
+    )
+    check(len(ctx_r.sent) == 1, "失败一次后重试成功，只成功送达一次", str(len(ctx_r.sent)))
+
+    plugin_c, ctx_c, cfg_c = make_plugin(module, whitelist_groups=["123456"], push_empty_report=True)
+    cfg_c["push_enabled"] = True
+    cfg_c["push_time"] = "00:00"
+    ctx_c.fail_sends = 99
+    for _ in range(3):
+        (plugin_c._store.setdefault("push_state", {}) or {})["next_ts"] = 0
+        await plugin_c._maybe_daily_push()
+    state_c = plugin_c._store.get("push_state") or {}
+    check(
+        state_c.get("attempts") == module.PUSH_MAX_ATTEMPTS and state_c.get("capped_logged"),
+        f"连续失败 {module.PUSH_MAX_ATTEMPTS} 次后不再重试",
+        str(state_c),
+    )
+
+    print("== 8.6 #验车状态 自检 ==")
+    status_ev = FakeEvent("#验车状态", sender_id="10001", role="member")
+    status_ev.message_obj.group.group_owner = "10001"
+    await drain(plugin_r.on_group_message(status_ev), status_ev)
+    status_text = str(status_ev.results[-1]) if status_ev.results else ""
+    check(
+        all(
+            key in status_text
+            for key in ("服务器本地时间", "定时推送", "在有白名单内" if False else "在白名单内", "今日记录", "推送会话")
+        ),
+        "#验车状态 返回自检信息",
+        status_text[:120],
+    )
 
     print("== 9. HTML 模板 ==")
     try:
