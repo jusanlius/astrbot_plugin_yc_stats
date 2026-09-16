@@ -95,23 +95,32 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { background: #fdf2f8; }
+  /* 隐藏滚动条：内容超过视口时避免截图右侧出现滚动条色带 */
+  html { scrollbar-width: none; }
+  ::-webkit-scrollbar { display: none; width: 0; height: 0; }
   body {
-    width: 720px;
+    width: 100%;
     font-family: "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC",
                  "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
     color: #4a3b52;
   }
+  /* 文转图是 full_page 截图，尺寸不会小于渲染视口：
+     poster 必须撑满视口（宽 100% + 最小高度 100vh），否则右侧/底部会露出空白 */
   .poster {
     position: relative;
-    width: 720px;
-    min-height: 420px;
+    isolation: isolate;               /* 独立层叠上下文：让底图层用负 z-index 沉到内容之下 */
+    width: 100%;
+    min-height: 100vh;
     padding: 26px 26px 18px;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
     background: linear-gradient(165deg, #fff7fb 0%, #fbe9ff 44%, #e9f3ff 100%);
   }
   /* 背景图：整层放大后做毛玻璃模糊，边缘由 .poster 的 overflow 裁掉 */
   .bg {
     position: absolute; inset: -30px;
+    z-index: -2;
     background-size: cover;
     background-position: 32% center;
     background-repeat: no-repeat;
@@ -121,6 +130,7 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
   /* 磨砂白纱：轻雾化照片，保证文字可读又不糊掉底图 */
   .frost {
     position: absolute; inset: 0;
+    z-index: -1;
     background:
       radial-gradient(120% 70% at 50% 4%, rgba(255, 255, 255, .34) 0%, rgba(255, 255, 255, 0) 62%),
       linear-gradient(165deg, rgba(232, 242, 255, {{ bg_alpha }}) 0%, rgba(255, 255, 255, {{ bg_alpha }}) 44%, rgba(255, 232, 244, {{ bg_alpha }}) 100%);
@@ -130,11 +140,11 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
     content: ""; position: absolute; inset: 10px; border-radius: 22px;
     border: 1px solid rgba(255, 255, 255, .5); pointer-events: none;
   }
-  .blob { position: absolute; border-radius: 50%; opacity: .5; }
+  .blob { position: absolute; border-radius: 50%; opacity: .5; z-index: -1; }
   .b1 { width: 260px; height: 260px; left: -70px; top: -80px; background: radial-gradient(circle, #ffd9ec 0%, rgba(255,217,236,0) 70%); }
   .b2 { width: 300px; height: 300px; right: -90px; top: 40px; background: radial-gradient(circle, #d9e6ff 0%, rgba(217,230,255,0) 70%); }
   .b3 { width: 240px; height: 240px; left: 40px; bottom: -110px; background: radial-gradient(circle, #ffe6f2 0%, rgba(255,230,242,0) 70%); }
-  .petal { position: absolute; width: 22px; height: 22px; opacity: .75;
+  .petal { position: absolute; width: 22px; height: 22px; opacity: .75; z-index: -1;
            border-radius: 72% 18% 72% 18%;
            background: linear-gradient(135deg, #ffd0e4, #ff9ec4); }
   .p1 { left: 34px; top: 96px; transform: rotate(18deg); }
@@ -174,7 +184,7 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
   }
   .stat .num { font-size: 26px; font-weight: 700; color: #e0669f; }
   .stat .lab { margin-top: 2px; font-size: 12px; color: #8b7c94; }
-  .list { display: flex; flex-direction: column; gap: 9px; }
+  .list { display: flex; flex-direction: column; gap: 9px; flex: 0 0 auto; }
   .row {
     display: flex; align-items: center; gap: 12px; padding: 9px 14px;
     border-radius: 16px; background: rgba(255, 255, 255, .58);
@@ -203,7 +213,12 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
     color: #fff; background: linear-gradient(135deg, #ff8fc0, #b07bff);
   }
   .more { margin-top: 10px; text-align: center; font-size: 13px; color: #9a8aa3; }
-  .empty { padding: 34px 0 26px; text-align: center; }
+  .empty {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 34px 0 26px; text-align: center;
+  }
   .face {
     position: relative; width: 132px; height: 118px; margin: 0 auto 14px;
     border-radius: 52% 52% 46% 46%; background: linear-gradient(160deg, #fff4fa, #ffe0ef);
@@ -228,7 +243,8 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
   .empty-sub { margin-top: 6px; font-size: 14px; color: #9a8aa3; }
   footer {
     display: flex; justify-content: space-between; align-items: center;
-    margin-top: 16px; padding-top: 12px; border-top: 1px dashed #f0d9e8;
+    margin-top: auto;                 /* 撑满视口时把页脚压到底部，内容与页脚之间留白 */
+    padding-top: 12px; border-top: 1px dashed #f0d9e8;
     font-size: 12px; color: #9a8aa3;
   }
   /* 有背景图时：底部说明与「更多」提示加白晕，保证在照片上也看得清 */
