@@ -80,7 +80,7 @@
 | `today_command` | bool | `true` | 是否允许 `#验车榜` |
 | `push_enabled` | bool | `true` | 每日推送开关 |
 | `push_time` | string | `23:00` | 推送时间（24 小时制 HH:MM），按下面的「推送时区」解释 |
-| `push_timezone` | string | `""` | 推送时区：留空 = 服务器本地时间；可填 `UTC` / `Asia/Shanghai` / `+08:00`。填了之后「每日推送时间」与「一天」的划分都按该时区 |
+| `push_timezone` | string | `Asia/Shanghai` | 推送时区（**下拉选择**）：北京时间 UTC+8 / UTC / +08:00 / 日本 / 新加坡 / 美东 / 美西 / 跟随服务器本地时间。填了之后「每日推送时间」与「一天」的划分都按该时区 |
 | `push_top_n` | int | `15` | 战报图最多显示条数 |
 | `push_min_count` | int | `1` | 上榜门槛 |
 | `push_empty_report` | bool | `false` | 当天无记录是否也推送空战报 |

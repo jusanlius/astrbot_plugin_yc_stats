@@ -55,8 +55,28 @@
   "push_timezone": {
     "type": "string",
     "description": "推送时区",
-    "default": "",
-    "hint": "留空 = 跟随服务器本地时间（VPS 多为 UTC，此时填 23:00 等于北京次日 7 点）。可填 UTC / Asia/Shanghai / +08:00 等；填了之后「每日推送时间」和「一天」的划分都按该时区。北京时间请填 Asia/Shanghai 或 +08:00。"
+    "default": "Asia/Shanghai",
+    "options": [
+      "Asia/Shanghai",
+      "UTC",
+      "+08:00",
+      "Asia/Tokyo",
+      "Asia/Singapore",
+      "-05:00",
+      "-08:00",
+      "local"
+    ],
+    "labels": [
+      "北京时间 UTC+8（推荐）",
+      "UTC 协调世界时",
+      "+08:00 固定偏移 +8 小时",
+      "日本时间 UTC+9",
+      "新加坡时间 UTC+8",
+      "-05:00 固定偏移 -5 小时（美东）",
+      "-08:00 固定偏移 -8 小时（美西）",
+      "跟随服务器本地时间（不换算）"
+    ],
+    "hint": "「每日推送时间」与「一天」的划分都按该时区计算。默认北京时间；选固定偏移（如 +08:00）零依赖、任何平台都能用；选 IANA 名称（如 Asia/Shanghai）在 Windows/macOS 上需要 tzdata（已写进 requirements.txt，缺失时会自动按 +08:00 兜底）。"
   },
   "push_top_n": {
     "type": "int",

@@ -71,6 +71,8 @@ BACKGROUND_EMBED_WIDTH = 1280
 DEFAULT_TRIGGERS = ("#验车", "验车")
 DEFAULT_PUSH_TIME = "23:00"
 DEFAULT_NAME_MAX_LEN = 20
+DEFAULT_PUSH_TIMEZONE = "Asia/Shanghai"
+"""推送时区默认值（北京时间）；配置项缺失时按此处理。"""
 DEFAULT_BACKGROUND_BLUR = 6
 DEFAULT_BACKGROUND_DIM = 14
 
@@ -79,6 +81,21 @@ PUSH_MAX_ATTEMPTS = 3
 
 PUSH_RETRY_INTERVAL_SECONDS = 300
 """推送失败/无目标时的重试间隔（秒）。"""
+
+ZONE_FALLBACK_OFFSETS = {
+    "asia/shanghai": 8,
+    "asia/chongqing": 8,
+    "asia/harbin": 8,
+    "asia/hong_kong": 8,
+    "asia/macau": 8,
+    "asia/taipei": 8,
+    "asia/singapore": 8,
+    "asia/tokyo": 9,
+    "asia/seoul": 9,
+    "utc": 0,
+    "gmt": 0,
+}
+"""没有 tzdata 时，这些常见时区按固定 UTC 偏移兜底（中国大陆无夏令时，等价）。"""
 
 MAGNET_RE = re.compile(r"magnet:\?[^\s\u3000<>\"'）】]+", re.IGNORECASE)
 BTIH_RE = re.compile(r"urn:btih:([0-9a-zA-Z]{32,40})", re.IGNORECASE)
@@ -561,7 +578,7 @@ class YcStatsPlugin(Star):
             支持 ``UTC`` / ``Asia/Shanghai`` 这类 IANA 名称，也支持 ``+08:00`` / ``-05:00``
             这种固定偏移写法；Windows/macOS 上用 IANA 名称需要 ``tzdata``（已写进 requirements.txt）。
         """
-        raw = str(self._cfg("push_timezone", "") or "").strip()
+        raw = str(self._cfg("push_timezone", DEFAULT_PUSH_TIMEZONE) or "").strip()
         if not raw or raw.lower() in ("local", "server", "system", "服务器", "本地"):
             return None
         # UTC/GMT 等零偏移别名：不依赖 tzdata，任何平台都能用
@@ -581,6 +598,15 @@ class YcStatsPlugin(Star):
         try:
             return ZoneInfo(raw)
         except Exception:
+            # 没有 tzdata（Windows/macOS 常见）时，对常见时区按固定偏移兜底
+            offset_hours = ZONE_FALLBACK_OFFSETS.get(raw.lower())
+            if offset_hours is not None:
+                logger.info(
+                    f"[{PLUGIN_NAME}] 未找到时区数据库，推送时区 {raw!r} 按固定偏移 "
+                    f"UTC{'+' if offset_hours >= 0 else '-'}{abs(offset_hours):02d}:00 处理"
+                    "（如需夏令时请安装 tzdata）"
+                )
+                return timezone(timedelta(hours=offset_hours), name=raw)
             logger.warning(
                 f"[{PLUGIN_NAME}] 无法识别的推送时区 {raw!r}（可用 UTC / +08:00 / Asia/Shanghai），"
                 "已回退为服务器本地时间"

@@ -739,21 +739,43 @@ async def main():
     check(plugin_tz._zone() is None, "留空 = 跟随服务器本地时间")
     cfg_tz["push_timezone"] = "Asia/Shanghai"
     zone = plugin_tz._zone()
-    if zone is None:
-        print("  SKIP  未安装 tzdata，跳过 IANA 命名时区检查")
-    else:
-        check(
-            plugin_tz._now().utcoffset() == timedelta(hours=8),
-            "Asia/Shanghai（北京时间）生效",
-            str(zone),
-        )
-        # 北京时间 23:00 = UTC 15:00
-        cfg_tz["push_timezone"] = "UTC"
-        cfg_tz["push_time"] = "15:00"
-        check(
-            int(module._parse_push_time(cfg_tz["push_time"])[0]) + 8 == 23,
-            "UTC 15:00 == 北京时间 23:00",
-        )
+    check(
+        zone is not None and plugin_tz._now().utcoffset() == timedelta(hours=8),
+        "Asia/Shanghai（北京时间）生效（无 tzdata 时按固定 +08:00 兜底）",
+        str(zone),
+    )
+    cfg_tz["push_timezone"] = "local"
+    check(plugin_tz._zone() is None, "local = 跟随服务器本地时间")
+    # 北京时间 23:00 = UTC 15:00
+    cfg_tz["push_timezone"] = "UTC"
+    cfg_tz["push_time"] = "15:00"
+    check(
+        int(module._parse_push_time(cfg_tz["push_time"])[0]) + 8 == 23,
+        "UTC 15:00 == 北京时间 23:00",
+    )
+
+    # 配置 schema：下拉选项与默认值
+    schema = json.loads((module.PLUGIN_DIR / "_conf_schema.json").read_text(encoding="utf-8"))
+    tz_field = schema["push_timezone"]
+    check(
+        tz_field["default"] == "Asia/Shanghai" and "Asia/Shanghai" in tz_field["options"],
+        "push_timezone 默认 Asia/Shanghai 且为下拉选项",
+        str(tz_field.get("default")),
+    )
+    check(
+        len(tz_field.get("labels", [])) == len(tz_field["options"]),
+        "下拉 labels 与 options 一一对应",
+        f"{len(tz_field.get('labels', []))} vs {len(tz_field['options'])}",
+    )
+    # 每个下拉选项都必须能被 _zone() 解析（除 local 表示跟随服务器）
+    for option in tz_field["options"]:
+        cfg_tz["push_timezone"] = option
+        resolved = plugin_tz._zone()
+        if option == "local":
+            check(resolved is None, "选项 local → 跟随服务器本地时间")
+        else:
+            check(resolved is not None, f"下拉选项 {option} 可解析", str(resolved))
+    cfg_tz["push_timezone"] = "Asia/Shanghai"
 
     print("== 9. HTML 模板 ==")
     try:
