@@ -465,9 +465,13 @@ class YcStatsPlugin(Star):
         self._scheduler_task = asyncio.create_task(
             self._scheduler_loop(), name=f"{PLUGIN_NAME}-scheduler"
         )
+        now = datetime.now()
         logger.info(
-            f"[{PLUGIN_NAME}] 已启动，推送时间 "
-            f"{self._cfg('push_time', DEFAULT_PUSH_TIME)}，数据目录 {self.data_dir}"
+            f"[{PLUGIN_NAME}] 已启动：记录={'开' if self._cfg('enabled', True) else '关'}"
+            f"，定时推送={'开' if self._cfg('push_enabled', True) else '关'}"
+            f"，推送时间 {self._cfg('push_time', DEFAULT_PUSH_TIME)}"
+            f"（服务器本地时间 {now:%Y-%m-%d %H:%M}，时区 {time.tzname[0]}）"
+            f"，白名单 {self._whitelist() or '（空=不限制）'}，数据目录 {self.data_dir}"
         )
 
     async def terminate(self) -> None:
@@ -646,9 +650,11 @@ class YcStatsPlugin(Star):
 
         Yields:
             AstrBot 消息结果（回执或战报图片）。
+
+        Note:
+            ``enabled`` 只控制「记录」；``#验车榜`` / ``#验车推送`` 与定时推送
+            不受它影响，避免关掉记录后连推送一起失效。
         """
-        if not self._cfg("enabled", True):
-            return
         group_id = event.get_group_id()
         if not group_id:
             return
@@ -664,14 +670,16 @@ class YcStatsPlugin(Star):
 
         if kind == "preview":
             if not self._cfg("today_command", True):
+                yield event.plain_result("本群已关闭战报查询（可在插件配置里开启「允许群内查询今日榜单」）。")
                 return
             await self._remember_group(event)
             yield await self._reply_preview(event)
             return
 
         if kind == "push":
-            if not self._is_admin(event):
-                yield event.plain_result("只有群管理员可以手动推送战报。")
+            allowed, reason = await self._can_manual_push(event)
+            if not allowed:
+                yield event.plain_result(reason)
                 return
             await self._remember_group(event)
             sent = await self._push_groups([group_id], _today_str(), force=True)
@@ -690,6 +698,11 @@ class YcStatsPlugin(Star):
             )
             return
 
+        if not self._cfg("enabled", True):
+            # 记录开关关闭：只影响记录，不影响上面的查询/推送指令
+            logger.debug(f"[{PLUGIN_NAME}] 记录已关闭（enabled=false），忽略群 {group_id} 的验车记录")
+            return
+
         parsed = self._parse_yc_body(body)
         if not parsed:
             return
@@ -705,6 +718,43 @@ class YcStatsPlugin(Star):
             yield event.plain_result(
                 f"已记录（{flag}）：{entry['name']}\n该磁力今天第 {entry['count']} 次出现。"
             )
+
+    async def _can_manual_push(self, event: AstrMessageEvent) -> tuple[bool, str]:
+        """判断发送者是否有权手动推送战报。
+
+        Args:
+            event: 群消息事件。
+
+        Returns:
+            ``(是否允许, 拒绝时的提示文案)``。
+
+        Note:
+            允许三种人：AstrBot 管理员、群主/群管理员；拿不到群成员信息时不拦
+            （部分平台不提供成员信息，避免把群主误拒）。
+        """
+        if self._is_admin(event):
+            return True, ""
+        sender_id = str(event.get_sender_id() or "")
+        group = getattr(event.message_obj, "group", None)
+        owner = getattr(group, "group_owner", None) if group else None
+        admins = getattr(group, "group_admins", None) if group else None
+        if not owner and not admins:
+            # 事件里没有成员信息 → 主动问一次协议端（OneBot 系支持）
+            try:
+                resolved = await event.get_group()
+                if resolved is not None:
+                    group = resolved
+                    owner = getattr(resolved, "group_owner", None)
+                    admins = getattr(resolved, "group_admins", None)
+            except Exception as e:
+                logger.debug(f"[{PLUGIN_NAME}] 获取群成员信息失败: {e}")
+        if owner or admins:
+            if owner and str(owner) == sender_id:
+                return True, ""
+            if sender_id and sender_id in {str(item) for item in (admins or [])}:
+                return True, ""
+            return False, "只有群主/群管理员（或 AstrBot 管理员）可以手动推送战报。"
+        return True, ""
 
     def _match_trigger(self, raw_text: str) -> tuple[str, str] | None:
         """判断消息是否命中验车指令。
@@ -1577,8 +1627,13 @@ class YcStatsPlugin(Star):
             await asyncio.sleep(20)
 
     async def _maybe_daily_push(self) -> None:
-        """判断是否到达推送时间，满足条件则推送当天战报。"""
-        if not self._cfg("enabled", True) or not self._cfg("push_enabled", True):
+        """判断是否到达推送时间，满足条件则推送当天战报。
+
+        Note:
+            只看 ``push_enabled`` / ``push_time``，与记录开关 ``enabled`` 无关：
+            关掉记录也应该照常推送（当天没记录时按 ``push_empty_report`` 决定）。
+        """
+        if not self._cfg("push_enabled", True):
             return
         day = _today_str()
         if self._store.get("last_push_day") == day:
@@ -1592,8 +1647,17 @@ class YcStatsPlugin(Star):
         self._store["last_push_day"] = day
         await self._save_store()
         targets = self._push_targets(day)
-        logger.info(f"[{PLUGIN_NAME}] 开始每日推送 {day}，目标群 {targets}")
-        await self._push_groups(targets, day)
+        if not targets:
+            logger.warning(
+                f"[{PLUGIN_NAME}] {day} 没有推送目标（白名单为空且当天无记录），已跳过每日推送"
+            )
+            return
+        logger.info(
+            f"[{PLUGIN_NAME}] 开始每日推送 {day}（服务器本地时间 {now:%Y-%m-%d %H:%M}），目标群 {targets}"
+        )
+        results = await self._push_groups(targets, day)
+        ok_count = sum(1 for item in results if item.get("ok"))
+        logger.info(f"[{PLUGIN_NAME}] 每日推送结束：成功 {ok_count}/{len(results)}，明细 {results}")
 
     def _push_targets(self, day: str) -> list[str]:
         """计算推送目标群列表。
@@ -1629,6 +1693,10 @@ class YcStatsPlugin(Star):
             if not report["unique_count"] and not (
                 force or self._cfg("push_empty_report", False)
             ):
+                logger.warning(
+                    f"[{PLUGIN_NAME}] 群 {group_id} 当天没有记录，跳过推送"
+                    "（如需空白战报请开启「无记录也推送空战报」）"
+                )
                 results.append({"group_id": group_id, "ok": False, "error": "当天无记录"})
                 continue
             umo = await self._resolve_umo(group_id)

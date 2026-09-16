@@ -1,4 +1,4 @@
-﻿"""本地验证脚本：用桩模块模拟 AstrBot，跑通验车插件的核心逻辑。
+"""本地验证脚本：用桩模块模拟 AstrBot，跑通验车插件的核心逻辑。
 
 覆盖内容：
     1. 指令匹配（#验车 / 验车 / /验车 / #验车榜 / #验车推送）
@@ -290,6 +290,9 @@ class FakeEvent:
     def is_admin(self):
         return self.role == "admin"
 
+    async def get_group(self, group_id=None):
+        return self.message_obj.group
+
     def plain_result(self, text):
         result = ("plain", text)
         self.results.append(result)
@@ -445,6 +448,68 @@ async def main():
     await drain(plugin.on_group_message(ev5), ev5)
     check(bool(plugin._store["days"][module._today_str()]["123456"]), "白名单内的群正常记录")
     check(not ev5.results, "关闭回执时无输出")
+
+    print("== 3.5 记录开关只影响记录（enabled=false 时推送/查询仍可用）==")
+    plugin_off, ctx_off, cfg_off = make_plugin(
+        module, enabled=False, push_enabled=True, whitelist_groups=["123456"]
+    )
+    ev_rec = FakeEvent(f"#验车 {link}")
+    await drain(plugin_off.on_group_message(ev_rec), ev_rec)
+    check(
+        not plugin_off._store["days"].get(module._today_str(), {}).get("123456"),
+        "enabled=false 时不记录",
+    )
+
+    owner_ev = FakeEvent("#验车推送", sender_id="10001", role="member")
+    owner_ev.message_obj.group.group_owner = "10001"
+    owner_ev.message_obj.group.group_admins = []
+    await drain(plugin_off.on_group_message(owner_ev), owner_ev)
+    check(
+        bool(owner_ev.results) and "战报已推送" in str(owner_ev.results[-1]),
+        "enabled=false 时群主仍可手动推送",
+        str(owner_ev.results),
+    )
+    check(len(ctx_off.sent) == 1, "手动推送真的调用了 send_message", str(ctx_off.sent))
+
+    member_ev = FakeEvent("#验车推送", sender_id="20002", role="member")
+    member_ev.message_obj.group.group_owner = "10001"
+    member_ev.message_obj.group.group_admins = ["10005"]
+    await drain(plugin_off.on_group_message(member_ev), member_ev)
+    check(
+        bool(member_ev.results) and "只有群主" in str(member_ev.results[-1]),
+        "普通成员被拒绝手动推送",
+        str(member_ev.results),
+    )
+
+    admin_ev = FakeEvent("#验车推送", sender_id="30003", role="admin")
+    admin_ev.message_obj.group.group_owner = "10001"
+    admin_ev.message_obj.group.group_admins = []
+    await drain(plugin_off.on_group_message(admin_ev), admin_ev)
+    check(
+        bool(admin_ev.results) and "战报已推送" in str(admin_ev.results[-1]),
+        "AstrBot 管理员可手动推送",
+    )
+
+    preview_ev = FakeEvent("#验车榜", role="member")
+    await drain(plugin_off.on_group_message(preview_ev), preview_ev)
+    check(
+        bool(preview_ev.results) and preview_ev.results[-1][0] == "image",
+        "enabled=false 时 #验车榜 仍可用",
+        str(preview_ev.results),
+    )
+
+    # 定时推送同样不再受 enabled 影响（当天无记录时靠 push_empty_report 才发空战报）
+    plugin_off._save_config({"push_empty_report": True})
+    plugin_off._store["last_push_day"] = None
+    cfg_off["push_enabled"] = True
+    cfg_off["push_time"] = "00:00"
+    before = len(ctx_off.sent)
+    await plugin_off._maybe_daily_push()
+    check(
+        plugin_off._store.get("last_push_day") == module._today_str() and len(ctx_off.sent) == before + 1,
+        "enabled=false 时定时推送照常执行",
+        f"last_push_day={plugin_off._store.get('last_push_day')} sent={len(ctx_off.sent)}-{before}",
+    )
 
     print("== 4. 战报数据 ==")
     ev6 = FakeEvent(f"#验车 {link}", sender_id="10003", sender_name="小红")
