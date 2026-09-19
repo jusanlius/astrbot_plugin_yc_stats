@@ -236,6 +236,39 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
     box-shadow: 0 2px 8px rgba(139, 92, 246, .28);
   }
   .more { margin-top: 10px; text-align: center; font-size: 13px; color: #5f5069; font-weight: 600; }
+  /* 群友榜：谁验车最多 */
+  .senders {
+    margin-top: 14px; padding: 12px 14px 13px; border-radius: 18px;
+    background: rgba(255, 255, 255, .74);
+    border: 1px solid rgba(255, 255, 255, .9);
+    box-shadow: 0 4px 12px rgba(150, 130, 190, .14);
+    backdrop-filter: blur(16px) saturate(1.15);
+  }
+  .senders-title {
+    font-size: 13.5px; font-weight: 700; color: #8a3d6b; letter-spacing: 1px; margin-bottom: 9px;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .senders-title small { font-size: 11.5px; color: #6d5f79; font-weight: 600; letter-spacing: 0; }
+  .senders-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .sender {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border-radius: 12px;
+    background: rgba(255, 255, 255, .72);
+    border: 1px solid rgba(255, 255, 255, .9);
+  }
+  .sender .s-rank {
+    width: 22px; height: 22px; flex: 0 0 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; background: #c9b6d6;
+  }
+  .sender.s1 .s-rank { background: linear-gradient(135deg, #ffc93c, #ff9f1c); }
+  .sender.s2 .s-rank { background: linear-gradient(135deg, #cfd8e3, #9fb0c4); }
+  .sender.s3 .s-rank { background: linear-gradient(135deg, #f4b183, #d98b5f); }
+  .sender .s-name {
+    flex: 1; min-width: 0; font-size: 14.5px; font-weight: 700; color: #342a3e;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sender .s-count { flex: 0 0 auto; font-size: 14px; font-weight: 800; color: #a8447b; }
   .empty {
     flex: 1;
     display: flex; flex-direction: column;
@@ -331,6 +364,23 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
     </div>
     {% if more_count %}
     <div class="more">… 还有 {{ more_count }} 条记录未展示</div>
+    {% endif %}
+    {% if senders %}
+    <div class="senders">
+      <div class="senders-title">
+        <span>群友榜 · 今日验车次数</span>
+        <small>共 {{ sender_total }} 位群友参与</small>
+      </div>
+      <div class="senders-grid">
+        {% for s in senders %}
+        <div class="sender {{ s.cls }}">
+          <span class="s-rank">{{ s.rank }}</span>
+          <span class="s-name">{{ s.name }}</span>
+          <span class="s-count">{{ s.count }} 次</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
     {% endif %}
     {% else %}
     <div class="empty">
@@ -1279,6 +1329,25 @@ class YcStatsPlugin(Star):
         users: set[str] = set()
         for item in entries:
             users.update(item.get("users", {}).keys())
+
+        # 群友榜：把各条磁力记录里的 users 按发送者汇总，得到「谁验车最多」
+        senders_map: dict[str, dict] = {}
+        for item in entries:
+            for uid, info in (item.get("users") or {}).items():
+                row = senders_map.setdefault(str(uid), {"uid": str(uid), "name": "", "count": 0})
+                row["count"] += int(info.get("count", 0))
+                if info.get("name"):
+                    row["name"] = str(info["name"])[:24]
+        sender_ranking = sorted(
+            senders_map.values(), key=lambda entry: (-entry["count"], entry["name"])
+        )
+        show_senders = bool(self._cfg("push_show_senders", True))
+        try:
+            sender_limit = int(self._cfg("push_sender_top_n", 5) or 0)
+        except (TypeError, ValueError):
+            sender_limit = 5
+        sender_rows = sender_ranking[: max(0, sender_limit)] if show_senders else []
+
         group_info = self._store.get("groups", {}).get(str(group_id), {})
         return {
             "title": str(self._cfg("image_title", "今日验车战报") or "今日验车战报").strip(),
@@ -1301,6 +1370,16 @@ class YcStatsPlugin(Star):
                 }
                 for index, item in enumerate(rows)
             ],
+            "senders": [
+                {
+                    "rank": index + 1,
+                    "name": entry["name"] or f"用户{entry['uid'][-4:]}",
+                    "count": int(entry["count"]),
+                    "cls": f"s{index + 1}" if index < 3 else "",
+                }
+                for index, entry in enumerate(sender_rows)
+            ],
+            "sender_total": len(sender_ranking),
             "generated_at": self._now().strftime("%Y-%m-%d %H:%M"),
         }
 
@@ -1358,6 +1437,11 @@ class YcStatsPlugin(Star):
             "rows": [
                 {**row, "name": html_lib.escape(row["name"])} for row in report["rows"]
             ],
+            "senders": [
+                {**sender, "name": html_lib.escape(sender["name"])}
+                for sender in report.get("senders", [])
+            ],
+            "sender_total": report.get("sender_total", 0),
         }
         try:
             path_str = await self.html_render(
@@ -1395,11 +1479,16 @@ class YcStatsPlugin(Star):
 
         width = 760
         rows = report["rows"]
+        senders = report.get("senders") or []
         list_top = 292
         row_step = 66
         list_height = len(rows) * row_step if rows else 250
+        more_height = 26 if report["more_count"] else 0
+        # 群友榜面板：两列排布，高度按行数算
+        sender_lines = (len(senders) + 1) // 2
+        senders_height = (46 + sender_lines * 38) if senders else 0
         footer_height = 62
-        height = list_top + list_height + (26 if report["more_count"] else 0) + footer_height
+        height = list_top + list_height + more_height + senders_height + footer_height
 
         rng = random.Random(f"{report['date']}-{report['group_id']}")
         bg_image = self._background_image_sync()
@@ -1489,6 +1578,8 @@ class YcStatsPlugin(Star):
         name_font = self._load_font(22)
         count_font = self._load_font(19)
         foot_font = self._load_font(13)
+        sender_font = self._load_font(16)
+        sender_title_font = self._load_font(15)
 
         def center_text(text: str, y: int, font: Any, fill: tuple, shadow: bool = False) -> None:
             text_width = draw.textlength(text, font=font)
@@ -1689,6 +1780,65 @@ class YcStatsPlugin(Star):
                 font=lab_font,
                 fill=(154, 138, 163),
             )
+
+        # 群友榜：谁验车最多（两列）
+        if senders:
+            panel_top = list_top + list_height + more_height + 8
+            panel_height = 46 + sender_lines * 38
+            draw.rounded_rectangle(
+                [40, panel_top, width - 40, panel_top + panel_height],
+                radius=18,
+                fill=(255, 255, 255, 214 if has_bg else 228),
+                outline=(255, 255, 255, 235) if has_bg else (255, 255, 255, 250),
+                width=2 if has_bg else 1,
+            )
+            draw.text(
+                (58, panel_top + 11),
+                "群友榜 · 今日验车次数",
+                font=sender_title_font,
+                fill=(138, 61, 107),
+            )
+            total_text = f"共 {report.get('sender_total', len(senders))} 位群友参与"
+            total_width = draw.textlength(total_text, font=lab_font)
+            draw.text(
+                (width - 58 - total_width, panel_top + 13),
+                total_text,
+                font=lab_font,
+                fill=(99, 85, 111),
+            )
+            column_width = (width - 116 - 20) // 2
+            for index, sender in enumerate(senders):
+                column = index % 2
+                line = index // 2
+                base_x = 58 + column * (column_width + 20)
+                base_y = panel_top + 42 + line * 38
+                badge_colors = ((255, 176, 68), (168, 182, 199), (231, 152, 106))
+                badge_color = badge_colors[index] if index < 3 else (203, 184, 214)
+                draw.ellipse(
+                    [base_x, base_y + 2, base_x + 22, base_y + 24], fill=badge_color
+                )
+                rank_text = str(index + 1)
+                rank_width = draw.textlength(rank_text, font=lab_font)
+                draw.text(
+                    (base_x + 11 - rank_width / 2, base_y + 6),
+                    rank_text,
+                    font=lab_font,
+                    fill=(255, 255, 255),
+                )
+                sender_name = self._fit_text(
+                    draw, sender.get("name", ""), sender_font, column_width - 92
+                )
+                draw.text(
+                    (base_x + 30, base_y + 3), sender_name, font=sender_font, fill=(52, 42, 62)
+                )
+                count_text = f"{sender.get('count', 0)} 次"
+                count_width = draw.textlength(count_text, font=count_font)
+                draw.text(
+                    (base_x + column_width - count_width, base_y + 3),
+                    count_text,
+                    font=count_font,
+                    fill=(168, 68, 123),
+                )
 
         footer_text_color = (70, 58, 82) if has_bg else (120, 106, 132)
 
@@ -2196,6 +2346,7 @@ class YcStatsPlugin(Star):
         if group_id and group_id not in days:
             days = {}
         entries = []
+        senders_map: dict[str, dict] = {}
         for gid, bucket in days.items():
             if group_id and gid != group_id:
                 continue
@@ -2215,8 +2366,38 @@ class YcStatsPlugin(Star):
                         "user_count": len(item.get("users", {})),
                     }
                 )
+                # 顺带汇总「群友榜」：谁发送 #验车 最多
+                for uid, info in (item.get("users") or {}).items():
+                    row = senders_map.setdefault(
+                        str(uid),
+                        {
+                            "uid": str(uid),
+                            "name": "",
+                            "count": 0,
+                            "group_id": gid,
+                            "group_name": self._store.get("groups", {})
+                            .get(gid, {})
+                            .get("name", ""),
+                        },
+                    )
+                    row["count"] += int(info.get("count", 0))
+                    if info.get("name"):
+                        row["name"] = str(info["name"])[:24]
         entries.sort(key=lambda item: (-item["count"], item["name"]))
-        return json_response({"date": str(day), "group_id": group_id, "entries": entries})
+        senders = sorted(
+            senders_map.values(), key=lambda item: (-item["count"], item["name"])
+        )
+        for index, sender in enumerate(senders):
+            sender["rank"] = index + 1
+        return json_response(
+            {
+                "date": str(day),
+                "group_id": group_id,
+                "entries": entries,
+                "senders": senders,
+                "sender_total": len(senders),
+            }
+        )
 
     async def api_save_whitelist(self):
         """保存群白名单。

@@ -205,6 +205,42 @@ function renderDetail(entries) {
   }
 }
 
+/** 渲染「群友榜」：谁发送 #验车 最多。 */
+function renderSenders(senders, senderTotal) {
+  const body = $("senders-body");
+  body.textContent = "";
+  $("senders-total").textContent = senders.length
+    ? `共 ${senderTotal ?? senders.length} 位群友参与`
+    : "";
+  if (!senders.length) {
+    const empty = document.createElement("span");
+    empty.className = "hint";
+    empty.textContent = "该日期没有群友记录";
+    body.appendChild(empty);
+    return;
+  }
+  for (const sender of senders.slice(0, 30)) {
+    const chip = document.createElement("span");
+    chip.className = `sender-chip ${sender.rank <= 3 ? `s${sender.rank}` : ""}`;
+
+    const rank = document.createElement("span");
+    rank.className = "s-rank";
+    rank.textContent = String(sender.rank);
+
+    const name = document.createElement("span");
+    name.className = "s-name";
+    name.textContent = sender.name || `用户${String(sender.uid).slice(-4)}`;
+    name.title = sender.uid ? `QQ/ID: ${sender.uid}` : "";
+
+    const count = document.createElement("span");
+    count.className = "s-count";
+    count.textContent = `${sender.count} 次`;
+
+    chip.append(rank, name, count);
+    body.appendChild(chip);
+  }
+}
+
 /** 拉取某天 / 某群明细并渲染。 */
 async function loadDetail() {
   const date = $("preview-date").value || state.today;
@@ -214,6 +250,7 @@ async function loadDetail() {
   try {
     const data = await bridge.apiGet("stats", params);
     renderDetail(data.entries || []);
+    renderSenders(data.senders || [], data.sender_total);
   } catch (error) {
     hint("push-result", `明细加载失败：${error.message}`, "err");
   }

@@ -525,6 +525,49 @@ async def main():
     check(report["unique_count"] == 1, "战报去重条数", f"实际 {report['unique_count']}")
     check(report["rows"][0]["pct"] == 100 and report["rows"][0]["rank"] == 1, "榜单行数据")
 
+    print("== 4.5 群友榜（发送者 + 次数）==")
+    plugin_s, ctx_s, cfg_s = make_plugin(module, whitelist_groups=["123456"])
+    link_s = f"magnet:?xt=urn:btih:{'9'*40}&dn=群友榜测试资源"
+    for sender_id, sender_name in (("10001", "阿伟"), ("10001", "阿伟"), ("10002", "小明")):
+        sender_ev = FakeEvent(f"#验车 {link_s}", sender_id=sender_id, sender_name=sender_name)
+        await drain(plugin_s.on_group_message(sender_ev), sender_ev)
+    rep = plugin_s._build_report("123456", module._today_str())
+    check(
+        [(s["name"], s["count"]) for s in rep["senders"]] == [("阿伟", 2), ("小明", 1)],
+        "群友榜按次数降序且累加",
+        str(rep["senders"]),
+    )
+    check(
+        rep["sender_total"] == 2 and rep["user_count"] == 2,
+        "群友榜人数与参与群友数一致",
+        f"sender_total={rep['sender_total']} user_count={rep['user_count']}",
+    )
+    check(rep["senders"][0]["rank"] == 1 and rep["senders"][0]["cls"] == "s1", "群友榜名次标记")
+    cfg_s["push_show_senders"] = False
+    check(
+        plugin_s._build_report("123456", module._today_str())["senders"] == [],
+        "关闭开关后不输出群友榜",
+    )
+    cfg_s["push_show_senders"] = True
+    cfg_s["push_sender_top_n"] = 1
+    check(
+        len(plugin_s._build_report("123456", module._today_str())["senders"]) == 1,
+        "群友榜条数受 push_sender_top_n 限制",
+    )
+    cfg_s["push_sender_top_n"] = 5
+    REQUEST.query_values = {"date": module._today_str(), "group_id": "123456"}
+    stats_s = await plugin_s.api_stats()
+    check(
+        [(s["name"], s["count"]) for s in stats_s["_json"]["senders"]] == [("阿伟", 2), ("小明", 1)],
+        "api_stats 返回群友榜",
+        str(stats_s["_json"].get("senders")),
+    )
+    REQUEST.query_values = {}
+    senders_pillow = await asyncio.to_thread(plugin_s._render_report_pillow, rep)
+    check(senders_pillow is not None and senders_pillow.is_file(), "群友榜参与 Pillow 出图")
+    if senders_pillow:
+        (OUT_DIR / "senders-pillow.jpg").write_bytes(senders_pillow.read_bytes())
+
     print("== 5. Web API ==")
     check(len(ctx.routes) == 7, "注册 7 个 Web API 路由", f"实际 {sorted(ctx.routes)}")
     overview = await plugin.api_overview()
@@ -799,9 +842,11 @@ async def main():
             rows=report["rows"],
             bg_uri=bg_uri_for_html,
             bg_blur=6, bg_dim=14, bg_alpha=0.08,
+            senders=rep["senders"], sender_total=rep["sender_total"],
         )
         (OUT_DIR / "preview-html.html").write_text(rows_html, encoding="utf-8")
         check("今日验车战报" in rows_html and "×2" in rows_html, "HTML 模板渲染出榜单")
+        check("群友榜 · 今日验车次数" in rows_html and "阿伟" in rows_html, "HTML 模板渲染出群友榜")
         check("has-bg" in rows_html and "data:image/jpeg;base64," in rows_html
               and "backdrop-filter" in rows_html,
               "HTML 模板渲染出背景图层与毛玻璃样式")

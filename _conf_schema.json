@@ -96,6 +96,19 @@
     "default": false,
     "hint": "开启后即使当天没有任何 #验车 记录，也会推送一张空战报图。"
   },
+  "push_show_senders": {
+    "type": "bool",
+    "description": "战报图显示「群友榜」",
+    "default": true,
+    "hint": "在战报图下方追加「群友榜 · 今日验车次数」，展示发送 #验车 最多的群友及各自次数。"
+  },
+  "push_sender_top_n": {
+    "type": "int",
+    "description": "群友榜显示人数",
+    "default": 5,
+    "slider": { "min": 0, "max": 20, "step": 1 },
+    "hint": "群友榜最多显示前 N 位（按当天发送 #验车 次数排序），0 = 不显示。"
+  },
   "render_mode": {
     "type": "string",
     "description": "出图方式",
