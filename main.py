@@ -2408,7 +2408,8 @@ class YcStatsPlugin(Star):
                         "today_unique": len(bucket),
                     }
                 )
-        available_days = sorted(days.keys(), reverse=True)[:30]
+        # 日期下拉始终包含「今天」（即使今天还没有记录），否则没法预览/推送今天的空战报
+        available_days = sorted({day, *days.keys()}, reverse=True)[:30]
         return json_response(
             {
                 "plugin": PLUGIN_NAME,

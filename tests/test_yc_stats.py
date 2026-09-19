@@ -574,6 +574,15 @@ async def main():
     data = overview["_json"]
     check(data["today"] == module._today_str(), "overview.today")
     check(data["whitelist"] == ["123456"], "overview.whitelist")
+    check(
+        module._today_str() in data["days"],
+        "overview.days 始终包含今天（即使今天没有记录）",
+        str(data["days"][:3]),
+    )
+    check(
+        data["days"] == sorted(data["days"], reverse=True),
+        "overview.days 按日期倒序",
+    )
     check(any(g["group_id"] == "123456" and g["whitelisted"] for g in data["groups"]),
           "overview 群列表含白名单标记")
     REQUEST.query_values = {"date": module._today_str(), "group_id": "123456"}

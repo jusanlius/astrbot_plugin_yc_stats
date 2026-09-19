@@ -26,7 +26,7 @@ function hint(id, text, kind = "ok") {
   if (kind !== "err") {
     window.setTimeout(() => {
       if (el.textContent === text) el.textContent = "";
-    }, 4000);
+    }, 8000);
   }
 }
 
@@ -146,7 +146,10 @@ function renderGroups() {
 
 /** 渲染日期 / 群下拉框。 */
 function renderSelectors() {
-  const days = state.days.length ? state.days : [state.today];
+  // 始终把「今天」放进选项（即使今天还没有任何记录），方便预览/推送当天空战报
+  const days = [...new Set([state.today, ...(state.days || [])].filter(Boolean))]
+    .sort()
+    .reverse();
   const dateSel = $("preview-date");
   const keepDate = dateSel.value;
   dateSel.textContent = "";
@@ -366,15 +369,17 @@ function bindEvents() {
     for (const gid of state.whitelist) {
       if (!groups.includes(gid)) groups.push(gid);
     }
-    if (!groups.length) {
-      // 一个都不勾选 = 不限制
-      const confirmed = window.confirm("没有勾选任何群，将保存为空白名单（= 不限制，记录并推送所有群）。确定吗？");
-      if (!confirmed) return;
-    }
+    // 注意：沙箱 iframe 里 window.confirm 会被浏览器拦截（没有 allow-modals），
+    // 所以这里不做二次确认，只把后果写进提示里。
     try {
       const saved = await bridge.apiPost("whitelist", { groups: [...new Set(groups)] });
       state.whitelist = saved.whitelist || [];
-      hint("whitelist-hint", state.whitelist.length ? `已保存 ${state.whitelist.length} 个群` : "已保存：不限制所有群");
+      hint(
+        "whitelist-hint",
+        state.whitelist.length
+          ? `已保存 ${state.whitelist.length} 个群`
+          : "已保存：白名单为空（不限制，所有群都记录并推送）"
+      );
       await loadOverview(true);
     } catch (error) {
       hint("whitelist-hint", `保存失败：${error.message}`, "err");
@@ -382,6 +387,7 @@ function bindEvents() {
   });
 
   $("btn-preview").addEventListener("click", async () => {
+    hint("push-result", "正在生成预览…");
     try {
       const payload = { date: $("preview-date").value || state.today };
       if ($("preview-group").value) payload.group_id = $("preview-group").value;
@@ -399,8 +405,8 @@ function bindEvents() {
     const payload = { date: $("preview-date").value || state.today };
     const groupId = $("preview-group").value;
     if (groupId) payload.groups = [groupId];
-    const confirmed = window.confirm(`确定立刻把 ${payload.date} 的战报推送到群吗？`);
-    if (!confirmed) return;
+    // 沙箱 iframe 不支持 window.confirm（会被静默拦截），直接执行并回报结果
+    hint("push-result", `正在推送 ${payload.date} 的战报…`);
     try {
       const data = await bridge.apiPost("push", payload);
       const ok = (data.results || []).filter((item) => item.ok).length;
