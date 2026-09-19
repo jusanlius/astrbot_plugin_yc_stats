@@ -75,6 +75,8 @@ DEFAULT_PUSH_TIMEZONE = "Asia/Shanghai"
 """推送时区默认值（北京时间）；配置项缺失时按此处理。"""
 DEFAULT_BACKGROUND_BLUR = 6
 DEFAULT_BACKGROUND_DIM = 14
+DEFAULT_EMPTY_REPORT_TEXT = "今天一辆车都没，真是怠惰呢"
+"""当天没有任何 #验车 记录时，战报图上的文案。"""
 
 PUSH_MAX_ATTEMPTS = 3
 """每日推送最多尝试次数（全部失败后当天不再重试）。"""
@@ -295,6 +297,12 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
                border: 2px solid #ffd0e4; }
   .face .ear.l { left: 8px; border-radius: 70% 20% 60% 30%; transform: rotate(-16deg); }
   .face .ear.r { right: 8px; border-radius: 20% 70% 30% 60%; transform: rotate(16deg); }
+  /* 「怠惰」气氛：睡觉的小尾巴 */
+  .face .zzz {
+    position: absolute; right: -34px; top: -6px;
+    font-size: 20px; font-weight: 800; letter-spacing: 1px; color: #b07bff;
+    transform: rotate(-12deg); text-shadow: 0 1px 0 rgba(255, 255, 255, .8);
+  }
   .empty-title { font-size: 21px; color: #9c3d72; font-weight: 700; }
   .empty-sub { margin-top: 6px; font-size: 14px; color: #5d4d68; font-weight: 600; }
   footer {
@@ -389,8 +397,9 @@ ANIME_TEMPLATE = """<!DOCTYPE html>
         <div class="eye l"></div><div class="eye r"></div>
         <div class="blush l"></div><div class="blush r"></div>
         <div class="mouth"></div>
+        <div class="zzz">Zzz</div>
       </div>
-      <div class="empty-title">今天还没有人验车哦</div>
+      <div class="empty-title">{{ empty_text }}</div>
       <div class="empty-sub">发送「#验车 磁力链接」即可上榜</div>
     </div>
     {% endif %}
@@ -1351,6 +1360,10 @@ class YcStatsPlugin(Star):
         group_info = self._store.get("groups", {}).get(str(group_id), {})
         return {
             "title": str(self._cfg("image_title", "今日验车战报") or "今日验车战报").strip(),
+            "empty_text": str(
+                self._cfg("empty_report_text", DEFAULT_EMPTY_REPORT_TEXT)
+                or DEFAULT_EMPTY_REPORT_TEXT
+            ).strip(),
             "date": day,
             "group_id": str(group_id),
             "group_name": group_info.get("name") or f"群 {group_id}",
@@ -1428,6 +1441,9 @@ class YcStatsPlugin(Star):
             "more_count": report["more_count"],
             "summary_line": html_lib.escape(
                 f"共 {report['total_count']} 次发送 · {report['user_count']} 位群友参与"
+            ),
+            "empty_text": html_lib.escape(
+                report.get("empty_text") or DEFAULT_EMPTY_REPORT_TEXT
             ),
             "generated_at": report["generated_at"],
             "bg_uri": await self._background_uri(),
@@ -1764,21 +1780,35 @@ class YcStatsPlugin(Star):
                 fill=(107, 88, 117),
                 width=3,
             )
-            empty_title = "今天还没有人验车哦"
+            empty_title = self._fit_text(
+                draw,
+                report.get("empty_text") or DEFAULT_EMPTY_REPORT_TEXT,
+                name_font,
+                width - 140,
+            )
             empty_width = draw.textlength(empty_title, font=name_font)
+            empty_x = (width - empty_width) / 2
+            if has_bg:
+                draw.text(
+                    (empty_x, list_top + 133), empty_title, font=name_font, fill=(255, 255, 255, 220)
+                )
             draw.text(
-                ((width - empty_width) / 2, list_top + 132),
-                empty_title,
-                font=name_font,
-                fill=(179, 87, 138),
+                (empty_x, list_top + 132), empty_title, font=name_font, fill=(156, 61, 114)
+            )
+            # 「怠惰」气氛：睡觉的 Zzz
+            draw.text(
+                (face_center[0] + 62, face_center[1] - 78),
+                "Zzz",
+                font=count_font,
+                fill=(150, 110, 220),
             )
             hint = "发送「#验车 磁力链接」即可上榜"
             hint_width = draw.textlength(hint, font=lab_font)
             draw.text(
-                ((width - hint_width) / 2, list_top + 168),
+                ((width - hint_width) / 2, list_top + 170),
                 hint,
                 font=lab_font,
-                fill=(154, 138, 163),
+                fill=(93, 77, 104),
             )
 
         # 群友榜：谁验车最多（两列）
@@ -2106,6 +2136,9 @@ class YcStatsPlugin(Star):
             caption = (
                 f"{report['title']} · {day}\n"
                 f"共 {report['total_count']} 次发送 / {report['unique_count']} 条磁力"
+                if report["unique_count"]
+                else f"{report['title']} · {day}\n"
+                f"{report.get('empty_text') or DEFAULT_EMPTY_REPORT_TEXT}"
             )
             ok = False
             error = ""

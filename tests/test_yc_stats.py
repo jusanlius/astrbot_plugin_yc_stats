@@ -879,10 +879,43 @@ async def main():
             rows=[],
             bg_uri="",
             bg_blur=6, bg_dim=14, bg_alpha=0.08,
+            empty_text=module.DEFAULT_EMPTY_REPORT_TEXT,
         )
         (OUT_DIR / "preview-html-empty.html").write_text(empty_html, encoding="utf-8")
-        check("今天还没有人验车哦" in empty_html, "HTML 空态渲染")
+        check(module.DEFAULT_EMPTY_REPORT_TEXT in empty_html, "HTML 空态渲染（摆烂文案）")
+        check("Zzz" in empty_html, "空态渲染出 Zzz 装饰")
         print(f"  -> HTML 预览: {OUT_DIR / 'preview-html.html'}")
+
+    print("== 9.5 空战报（摆烂图）==")
+    schema_empty = json.loads(
+        (module.PLUGIN_DIR / "_conf_schema.json").read_text(encoding="utf-8")
+    )
+    check(schema_empty["push_empty_report"]["default"] is True, "push_empty_report 默认开启")
+    check(
+        schema_empty["empty_report_text"]["default"] == module.DEFAULT_EMPTY_REPORT_TEXT,
+        "空战报文案默认值正确",
+    )
+    rep_empty = plugin_s._build_report("999888", module._today_str())
+    check(
+        rep_empty["empty_text"] == module.DEFAULT_EMPTY_REPORT_TEXT and rep_empty["unique_count"] == 0,
+        "战报数据带空态文案",
+        rep_empty.get("empty_text"),
+    )
+    empty_pillow = await asyncio.to_thread(plugin_s._render_report_pillow, rep_empty)
+    check(empty_pillow is not None and empty_pillow.is_file(), "空战报 Pillow 出图（摆烂猫）")
+    if empty_pillow:
+        (OUT_DIR / "empty-lazy-pillow.jpg").write_bytes(empty_pillow.read_bytes())
+    ctx_s.fail_sends = 0
+    sent_before = len(ctx_s.sent)
+    await plugin_s._push_groups(["123456"], "2099-01-01", force=True)
+    check(len(ctx_s.sent) == sent_before + 1, "空战报也会真的发出图片")
+    if len(ctx_s.sent) > sent_before:
+        caption_text = ctx_s.sent[-1][1].chain[0].text
+        check(
+            module.DEFAULT_EMPTY_REPORT_TEXT in caption_text,
+            "空战报随图发送摆烂文案",
+            caption_text,
+        )
 
     print("== 10. 配置/存储落盘 ==")
     check((DATA_ROOT / "config-dump.json").is_file(), "配置已保存到磁盘")

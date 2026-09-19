@@ -92,9 +92,15 @@
   },
   "push_empty_report": {
     "type": "bool",
-    "description": "当天无记录也推送",
-    "default": false,
-    "hint": "开启后即使当天没有任何 #验车 记录，也会推送一张空战报图。"
+    "description": "当天无记录也推送（摆烂图）",
+    "default": true,
+    "hint": "开启后即使当天没有任何 #验车 记录，也会推送一张「今天一辆车都没」的空战报图（配睡觉猫）。"
+  },
+  "empty_report_text": {
+    "type": "string",
+    "description": "空战报文案",
+    "default": "今天一辆车都没，真是怠惰呢",
+    "hint": "当天没有记录时，战报图上显示的主文案。"
   },
   "push_show_senders": {
     "type": "bool",
