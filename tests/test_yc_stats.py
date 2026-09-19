@@ -677,8 +677,17 @@ async def main():
     check(len(ctx.sent) == 1 and ctx.sent[0][0].endswith(":GroupMessage:123456"),
           "推送使用正确的 umo")
     check(len(ctx.sent[0][1].chain) == 2, "推送消息链包含文本 + 图片")
+    # 无记录时的两种行为：关闭空战报 → 跳过；开启（默认）→ 走空战报流程
+    cfg["push_empty_report"] = False
     results2 = await plugin._push_groups(["777"], module._today_str())
-    check(not results2[0]["ok"] and results2[0]["error"] == "当天无记录", "无记录时跳过")
+    check(not results2[0]["ok"] and results2[0]["error"] == "当天无记录", "关闭空战报时无记录跳过")
+    cfg["push_empty_report"] = True
+    results3 = await plugin._push_groups(["777"], module._today_str())
+    check(
+        results3[0]["error"] != "当天无记录",
+        "开启空战报时不跳过（改为尝试发送）",
+        str(results3),
+    )
 
     print("== 7.5 群会话解析（平台群列表） ==")
     ctx.platform_manager = types.SimpleNamespace(
@@ -916,6 +925,62 @@ async def main():
             "空战报随图发送摆烂文案",
             caption_text,
         )
+
+    print("== 9.6 无人验车 → 直接套用图片 ==")
+    plugin_e, ctx_e, cfg_e = make_plugin(
+        module, whitelist_groups=["123456"], push_empty_report=True
+    )
+    plugin_e._store["groups"]["123456"] = {
+        "umo": "aiocqhttp:GroupMessage:123456",
+        "name": "测试群",
+    }
+    bundled = plugin_e._empty_image_path()
+    check(
+        bundled is not None and bundled.name == "empty.jpg",
+        "找到插件自带空战报图片",
+        str(bundled),
+    )
+    check(plugin_e._empty_mode() == "image", "默认直接发送图片")
+
+    await plugin_e._push_groups(["123456"], "2099-01-01", force=True)
+    check(len(ctx_e.sent) == 1, "空战报已发出")
+    sent_image = str(ctx_e.sent[0][1].chain[-1].file)
+    check(sent_image.endswith("empty.jpg"), "直接套用自带图片（不是现场生成）", sent_image)
+    caption = ctx_e.sent[0][1].chain[0].text
+    check(
+        module.DEFAULT_EMPTY_REPORT_TEXT in caption,
+        "空战报随图文字为摆烂文案",
+        caption,
+    )
+
+    cfg_e["empty_report_text"] = ""
+    ctx_e.sent.clear()
+    await plugin_e._push_groups(["123456"], "2099-01-02", force=True)
+    check(len(ctx_e.sent[0][1].chain) == 1, "文案留空时只发图片不带文字")
+
+    cfg_e["empty_report_text"] = module.DEFAULT_EMPTY_REPORT_TEXT
+    cfg_e["empty_report_mode"] = "generated"
+    ctx_e.sent.clear()
+    await plugin_e._push_groups(["123456"], "2099-01-03", force=True)
+    generated = str(ctx_e.sent[0][1].chain[-1].file)
+    check(
+        not generated.endswith("empty.jpg") and generated.lower().endswith((".jpg", ".jpeg")),
+        "generated 模式改为现场生成摆烂图",
+        generated,
+    )
+
+    cfg_e["empty_report_mode"] = "image"
+    cfg_e["empty_report_image"] = str(plugin_e.data_dir / "not-exists.png")
+    check(
+        plugin_e._empty_image_path() is not None
+        and plugin_e._empty_image_path().name == "empty.jpg",
+        "自定义图片不存在时回退自带图",
+    )
+    # 数据目录里的 empty.* 优先级高于自带图
+    custom = plugin_e.data_dir / "empty.png"
+    custom.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+    check(plugin_e._empty_image_path() == custom, "数据目录同名图片优先于自带图")
+    custom.unlink()
 
     print("== 10. 配置/存储落盘 ==")
     check((DATA_ROOT / "config-dump.json").is_file(), "配置已保存到磁盘")

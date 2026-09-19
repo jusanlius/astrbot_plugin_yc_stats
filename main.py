@@ -62,6 +62,17 @@ BACKGROUND_FILENAMES = (
 )
 """背景图候选文件名：先查插件数据目录，再查插件自带 resources/ 目录。"""
 
+EMPTY_IMAGE_FILENAMES = (
+    "empty.jpg",
+    "empty.jpeg",
+    "empty.png",
+    "empty.webp",
+    "empty.gif",
+    "lazy.jpg",
+    "lazy.png",
+)
+"""「没人验车」时直接发送的图片候选文件名（先查数据目录，再查 resources/）。"""
+
 BACKGROUND_FOCAL_X = 0.32
 """背景图裁切焦点（0-1，横向）。鲸鱼娘位于画面偏左，竖版战报按此焦点裁切。"""
 
@@ -76,7 +87,10 @@ DEFAULT_PUSH_TIMEZONE = "Asia/Shanghai"
 DEFAULT_BACKGROUND_BLUR = 6
 DEFAULT_BACKGROUND_DIM = 14
 DEFAULT_EMPTY_REPORT_TEXT = "今天一辆车都没，真是怠惰呢"
-"""当天没有任何 #验车 记录时，战报图上的文案。"""
+"""当天没有任何 #验车 记录时，随图发送 / 生成战报图上的文案。"""
+
+DEFAULT_EMPTY_REPORT_MODE = "image"
+"""空战报出图方式：image = 直接发送指定图片；generated = 生成「摆烂图」。"""
 
 PUSH_MAX_ATTEMPTS = 3
 """每日推送最多尝试次数（全部失败后当天不再重试）。"""
@@ -1313,6 +1327,54 @@ class YcStatsPlugin(Star):
             value = DEFAULT_BACKGROUND_DIM
         return max(0, min(90, value))
 
+    def _empty_image_path(self) -> Path | None:
+        """解析「没人验车」时直接发送的图片。
+
+        Returns:
+            图片路径；未配置且找不到内置图时返回 ``None``。
+
+        Note:
+            查找顺序：配置 ``empty_report_image`` → 插件数据目录 ``empty.*`` / ``lazy.*``
+            → 插件自带 ``resources/``（随包分发的 ``empty.jpg``）。
+        """
+        custom = str(self._cfg("empty_report_image", "") or "").strip()
+        if custom:
+            path = Path(custom)
+            if not path.is_absolute():
+                path = self.data_dir / path
+            if path.is_file():
+                return path
+            logger.warning(f"[{PLUGIN_NAME}] 配置的空战报图片不存在，已忽略: {path}")
+        for folder in (self.data_dir, PLUGIN_DIR / "resources"):
+            for name in EMPTY_IMAGE_FILENAMES:
+                candidate = folder / name
+                if candidate.is_file():
+                    return candidate
+        return None
+
+    def _empty_mode(self) -> str:
+        """返回空战报出图方式：``image``（直接发图）或 ``generated``（生成摆烂图）。"""
+        mode = (
+            str(self._cfg("empty_report_mode", DEFAULT_EMPTY_REPORT_MODE) or "")
+            .strip()
+            .lower()
+        )
+        return mode if mode in ("image", "generated") else DEFAULT_EMPTY_REPORT_MODE
+
+    def _empty_caption(self, report: dict) -> str:
+        """拼装空战报的随图文字。
+
+        Args:
+            report: 战报数据。
+
+        Returns:
+            随图文字；``empty_report_text`` 留空时返回空串（= 只发图片、不带文字）。
+        """
+        text = str(self._cfg("empty_report_text", DEFAULT_EMPTY_REPORT_TEXT) or "").strip()
+        if not text:
+            return ""
+        return f"{report['title']} · {report['date']}\n{text}"
+
     # ------------------------------------------------------------------
     # 战报数据 & 图片渲染
     # ------------------------------------------------------------------
@@ -1988,7 +2050,12 @@ class YcStatsPlugin(Star):
             AstrBot 消息结果。
         """
         report = self._build_report(event.get_group_id(), self._today())
-        path = await self._render_report(report)
+        path: Path | None = None
+        if not report["unique_count"] and self._empty_mode() == "image":
+            # 当天没记录：按配置直接套用空战报图片
+            path = self._empty_image_path()
+        if path is None:
+            path = await self._render_report(report)
         if path is None:
             return event.plain_result("战报图生成失败，请查看 AstrBot 日志。")
         return event.image_result(str(path))
@@ -2114,12 +2181,11 @@ class YcStatsPlugin(Star):
         for group_id in group_ids:
             group_id = str(group_id)
             report = self._build_report(group_id, day)
-            if not report["unique_count"] and not (
-                force or self._cfg("push_empty_report", False)
-            ):
+            is_empty = not report["unique_count"]
+            if is_empty and not (force or self._cfg("push_empty_report", True)):
                 logger.warning(
                     f"[{PLUGIN_NAME}] 群 {group_id} 当天没有记录，跳过推送"
-                    "（如需空白战报请开启「无记录也推送空战报」）"
+                    "（如需空战报请开启「当天无记录也推送」）"
                 )
                 results.append({"group_id": group_id, "ok": False, "error": "当天无记录"})
                 continue
@@ -2129,23 +2195,40 @@ class YcStatsPlugin(Star):
                     {"group_id": group_id, "ok": False, "error": "无法确定会话（机器人不在该群？）"}
                 )
                 continue
-            path = await self._render_report(report)
+            path: Path | None = None
+            if is_empty and self._empty_mode() == "image":
+                # 没人验车：按配置直接套用指定图片（默认插件自带 resources/empty.jpg）
+                direct = self._empty_image_path()
+                if direct is not None:
+                    path = direct
+                    logger.info(
+                        f"[{PLUGIN_NAME}] 群 {group_id} 当天无记录 → 直接发送空战报图片 {direct.name}"
+                    )
+            if path is None:
+                path = await self._render_report(report)
             if path is None:
                 results.append({"group_id": group_id, "ok": False, "error": "战报图渲染失败"})
                 continue
             caption = (
-                f"{report['title']} · {day}\n"
-                f"共 {report['total_count']} 次发送 / {report['unique_count']} 条磁力"
-                if report["unique_count"]
-                else f"{report['title']} · {day}\n"
-                f"{report.get('empty_text') or DEFAULT_EMPTY_REPORT_TEXT}"
+                self._empty_caption(report)
+                if is_empty
+                else (
+                    f"{report['title']} · {day}\n"
+                    f"共 {report['total_count']} 次发送 / {report['unique_count']} 条磁力"
+                )
             )
             ok = False
             error = ""
+
+            def _chain(image_component) -> MessageChain:
+                """按是否配置了随图文字拼装消息链。"""
+                parts = [Plain(caption)] if caption else []
+                parts.append(image_component)
+                return MessageChain(chain=parts)
+
             try:
                 ok = await self.context.send_message(
-                    umo,
-                    MessageChain(chain=[Plain(caption), Image.fromFileSystem(str(path))]),
+                    umo, _chain(Image.fromFileSystem(str(path)))
                 )
             except Exception as e:
                 error = str(e)
@@ -2154,10 +2237,7 @@ class YcStatsPlugin(Star):
                 # 协议端与 AstrBot 不在同一台机器时 file:// 无效，改用 base64 直传
                 try:
                     raw = await asyncio.to_thread(path.read_bytes)
-                    ok = await self.context.send_message(
-                        umo,
-                        MessageChain(chain=[Plain(caption), Image.fromBytes(raw)]),
-                    )
+                    ok = await self.context.send_message(umo, _chain(Image.fromBytes(raw)))
                     error = "" if ok else error
                 except Exception as e:
                     error = str(e)
@@ -2543,7 +2623,11 @@ class YcStatsPlugin(Star):
                 bucket = self._store.get("days", {}).get(day, {})
                 group_id = sorted(bucket.keys())[0] if bucket else ""
         report = self._build_report(group_id, day)
-        path = await self._render_report(report)
+        path: Path | None = None
+        if not report["unique_count"] and self._empty_mode() == "image":
+            path = self._empty_image_path()
+        if path is None:
+            path = await self._render_report(report)
         if path is None:
             return error_response("战报图渲染失败，请检查插件日志", status_code=500)
         try:
@@ -2552,12 +2636,13 @@ class YcStatsPlugin(Star):
             return error_response(f"读取预览图失败: {e}", status_code=500)
         if len(raw) > 3 * 1024 * 1024:
             return error_response("预览图过大，请在群里直接查看", status_code=413)
+        mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
         encoded = base64.b64encode(raw).decode()
         return json_response(
             {
                 "date": day,
                 "group_id": group_id,
-                "image": f"data:image/jpeg;base64,{encoded}",
+                "image": f"data:{mime};base64,{encoded}",
                 "total_count": report["total_count"],
                 "unique_count": report["unique_count"],
             }

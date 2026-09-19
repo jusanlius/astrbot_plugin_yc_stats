@@ -96,11 +96,28 @@
     "default": true,
     "hint": "开启后即使当天没有任何 #验车 记录，也会推送一张「今天一辆车都没」的空战报图（配睡觉猫）。"
   },
+  "empty_report_mode": {
+    "type": "string",
+    "description": "空战报方式",
+    "default": "image",
+    "options": ["image", "generated"],
+    "labels": [
+      "直接发送指定图片（默认用插件自带 resources/empty.jpg）",
+      "生成摆烂图（睡觉猫 + 文案）"
+    ],
+    "hint": "当天没有任何 #验车 记录时怎么发：直接套用一张图（推荐，最省事），或用插件现场生成「摆烂图」。"
+  },
+  "empty_report_image": {
+    "type": "string",
+    "description": "空战报图片路径",
+    "default": "",
+    "hint": "留空则使用插件自带 resources/empty.jpg；也可把图片命名为 empty.jpg / lazy.jpg 放进插件数据目录覆盖（升级不丢）。选「生成摆烂图」时此项忽略。"
+  },
   "empty_report_text": {
     "type": "string",
     "description": "空战报文案",
     "default": "今天一辆车都没，真是怠惰呢",
-    "hint": "当天没有记录时，战报图上显示的主文案。"
+    "hint": "随图发送的文字；生成模式下也会显示在图上。留空 = 只发图片不带文字。"
   },
   "push_show_senders": {
     "type": "bool",
