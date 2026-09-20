@@ -358,6 +358,18 @@ def check(condition, label, extra=""):
         FAILURES.append(label)
 
 
+def last_chain(ctx):
+    """取最近一次发送的消息链；没有发送记录时返回 ``None``。
+
+    出图不可用（缺 Pillow、HTML T2I 失败）时推送会被整条跳过，``ctx.sent`` 为空——
+    此时必须判空，否则测试跑会以 ``IndexError`` 崩掉、后半段结果全丢。
+    """
+    return ctx.sent[-1][1].chain if ctx.sent else None
+
+
+SKIP_HINT = "没有发送记录（出图不可用时属预期）"
+
+
 def make_plugin(module, data_root=None, **config):
     """创建一个插件实例；默认使用独立数据目录，避免用例之间互相污染。"""
     global _case_seq
@@ -423,6 +435,34 @@ async def main():
     parsed4 = plugin._parse_yc_body("只有名字没有链接")
     check(parsed4 is not None and parsed4["hash"] == "" and parsed4["name"] == "只有名字没有链接",
           "纯名称记录")
+    parsed_typo32 = plugin._parse_yc_body("manget?xt=urn:btih:" + "5" * 32)
+    check(
+        parsed_typo32["hash"] == "5" * 32
+        and parsed_typo32["name"] == "5" * 12
+        and parsed_typo32["key"] == "hash:" + "5" * 32,
+        "写错前缀 + 32 位哈希：正确取哈希、名字退化为哈希前缀",
+        str(parsed_typo32),
+    )
+    parsed_typo40 = plugin._parse_yc_body("nanget?xt=urn:btih:" + "6" * 40)
+    check(
+        parsed_typo40["key"] == "hash:" + "6" * 40,
+        "写错前缀 + 40 位哈希：同样按哈希归并",
+        str(parsed_typo40),
+    )
+    check(
+        plugin._parse_yc_body("manget?xt=urn:btih:" + "7" * 32)["key"]
+        == plugin._parse_yc_body("magnet?xt=urn:btih:" + "7" * 32)["key"],
+        "同一个磁力不同前缀写法归到同一个 key",
+    )
+    parsed_named = plugin._parse_yc_body(
+        "【自压】某资源 manget?xt=urn:btih:" + "8" * 32
+    )
+    check(
+        parsed_named["name"] == "【自压】某资源" and parsed_named["key"] == "hash:" + "8" * 32,
+        "写错前缀 + 带名字：名字照常提取",
+        str(parsed_named),
+    )
+
     check(plugin._parse_yc_body("   ") is None, "空内容返回 None")
 
     print("== 3. 记录计数 / 白名单 / 回执 ==")
@@ -685,7 +725,13 @@ async def main():
     check(results[0]["ok"], "推送调用 send_message 成功", str(results))
     check(len(ctx.sent) == 1 and ctx.sent[0][0].endswith(":GroupMessage:123456"),
           "推送使用正确的 umo")
-    check(len(ctx.sent[0][1].chain) == 2, "推送消息链包含文本 + 图片")
+    if ctx.sent:
+        check(len(ctx.sent[0][1].chain) == 2, "推送消息链包含文本 + 图片")
+    else:
+        # 出图不可用时推送会被跳过（ok=False），此时不能直接索引 ctx.sent[0]——
+        # 否则整个测试跑会以 IndexError 崩掉，后半段结果全丢。
+        check(False, "推送消息链包含文本 + 图片",
+              f"没有任何发送记录（本次推送被跳过：{results[0].get('error')}）")
     # 无记录时的两种行为：关闭空战报 → 跳过；开启（默认）→ 走空战报流程
     cfg["push_empty_report"] = False
     results2 = await plugin._push_groups(["777"], module._today_str())
@@ -953,29 +999,34 @@ async def main():
 
     await plugin_e._push_groups(["123456"], "2099-01-01", force=True)
     check(len(ctx_e.sent) == 1, "空战报已发出")
-    sent_image = str(ctx_e.sent[0][1].chain[-1].file)
-    check(sent_image.endswith("empty.jpg"), "直接套用自带图片（不是现场生成）", sent_image)
-    caption = ctx_e.sent[0][1].chain[0].text
+    chain_e = last_chain(ctx_e)
+    sent_image = str(chain_e[-1].file) if chain_e else ""
+    check(sent_image.endswith("empty.jpg"), "直接套用自带图片（不是现场生成）",
+          sent_image or SKIP_HINT)
+    caption = chain_e[0].text if chain_e else ""
     check(
         module.DEFAULT_EMPTY_REPORT_TEXT in caption,
         "空战报随图文字为摆烂文案",
-        caption,
+        caption or SKIP_HINT,
     )
 
     cfg_e["empty_report_text"] = ""
     ctx_e.sent.clear()
     await plugin_e._push_groups(["123456"], "2099-01-02", force=True)
-    check(len(ctx_e.sent[0][1].chain) == 1, "文案留空时只发图片不带文字")
+    chain_e = last_chain(ctx_e)
+    check(chain_e is not None and len(chain_e) == 1, "文案留空时只发图片不带文字",
+          "" if chain_e else SKIP_HINT)
 
     cfg_e["empty_report_text"] = module.DEFAULT_EMPTY_REPORT_TEXT
     cfg_e["empty_report_mode"] = "generated"
     ctx_e.sent.clear()
     await plugin_e._push_groups(["123456"], "2099-01-03", force=True)
-    generated = str(ctx_e.sent[0][1].chain[-1].file)
+    chain_e = last_chain(ctx_e)
+    generated = str(chain_e[-1].file) if chain_e else ""
     check(
         not generated.endswith("empty.jpg") and generated.lower().endswith((".jpg", ".jpeg")),
         "generated 模式改为现场生成摆烂图",
-        generated,
+        generated or SKIP_HINT,
     )
 
     cfg_e["empty_report_mode"] = "image"

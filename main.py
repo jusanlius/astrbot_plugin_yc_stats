@@ -115,6 +115,15 @@ ZONE_FALLBACK_OFFSETS = {
 
 MAGNET_RE = re.compile(r"magnet:\?[^\s\u3000<>\"'）】]+", re.IGNORECASE)
 BTIH_RE = re.compile(r"urn:btih:([0-9a-zA-Z]{32,40})", re.IGNORECASE)
+HASH_ANY_RE = re.compile(
+    r"(?:xt\s*[:=]\s*urn\s*[:=]\s*btih\s*[:=]\s*)?"  # 前缀可写错/缺失
+    r"([0-9a-fA-F]{40}|[0-9a-fA-F]{32}|[A-Za-z2-7]{32})"
+)
+LINKISH_RE = re.compile(
+    r"(?:[A-Za-z]{3,12}\s*[:?]{0,3}\s*)?"  # manget? / nanget:? 之类写错的前缀
+    r"(?:xt\s*[:=]\s*urn\s*[:=]\s*btih\s*[:=]\s*)?"
+    r"[0-9a-zA-Z]{32,40}"
+)
 HEX40_RE = re.compile(r"(?<![0-9a-zA-Z])([0-9a-fA-F]{40})(?![0-9a-zA-Z])")
 AT_PREFIX_RE = re.compile(r"^(?:\[At:\d+\]\s*|@[^\s\u3000]+\s+)+")
 TRIM_CHARS = " \u3000\t:：-—–|/,，。.、;；"
@@ -1089,9 +1098,23 @@ class YcStatsPlugin(Star):
         link = links[0] if links else ""
         info_hash = _extract_btih(link) if link else ""
         if not info_hash:
-            hex_match = HEX40_RE.search(text)
-            if hex_match:
-                info_hash = hex_match.group(1).lower()
+            # 容错：链接前缀常被写错（manget? / nanget? / 少了 magnet:），
+            # 只要文本里出现 xt=urn:btih:<哈希> 或独立的 32/40 位哈希就认
+            hash_match = HASH_ANY_RE.search(text)
+            if hash_match:
+                raw_hash = hash_match.group(1)
+                is_base32 = bool(
+                    len(raw_hash) == 32
+                    and re.fullmatch(r"[A-Za-z2-7]{32}", raw_hash)
+                    and not re.fullmatch(r"[0-9a-fA-F]{32}", raw_hash)
+                )
+                if is_base32:
+                    try:
+                        info_hash = base64.b32decode(raw_hash.upper()).hex()
+                    except Exception:
+                        info_hash = raw_hash.lower()
+                else:
+                    info_hash = raw_hash.lower()
                 if not link:
                     link = f"magnet:?xt=urn:btih:{info_hash}"
 
@@ -1102,6 +1125,8 @@ class YcStatsPlugin(Star):
             residual = text
             for item in links:
                 residual = residual.replace(item, " ")
+            # 去掉写错前缀的链接串 / xt=urn:btih:<哈希> / 裸哈希，避免把链接本身当名字
+            residual = LINKISH_RE.sub(" ", residual)
             residual = HEX40_RE.sub(" ", residual)
             name = _collapse(residual).strip(TRIM_CHARS)
         # 名称候选 3：退化成哈希前缀
