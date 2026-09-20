@@ -422,6 +422,7 @@ async def main():
         check(kind == expect, f"_match_trigger({text[:24]!r}) -> {kind}", f"期望 {expect}")
 
     print("== 2. 磁力解析与截断 ==")
+    cfg["link_strict"] = False  # 本节验证容错模式；严格模式见 2.5
     long_name = "这是一个超级无敌长的磁力资源名称需要被截断处理哦"
     parsed = plugin._parse_yc_body(f"magnet:?xt=urn:btih:{'d'*40}&dn={long_name}")
     check(parsed is not None and len(parsed["name"]) == 20, "dn 名称截断到 20 字",
@@ -435,6 +436,26 @@ async def main():
     parsed4 = plugin._parse_yc_body("只有名字没有链接")
     check(parsed4 is not None and parsed4["hash"] == "" and parsed4["name"] == "只有名字没有链接",
           "纯名称记录")
+    print("== 2.5 链接写错时的严格模式 ==")
+    cfg["link_strict"] = True
+    check(
+        plugin._parse_yc_body("manget?xt=urn:btih:" + "9" * 32) is None,
+        "严格模式：前缀写错不统计",
+    )
+    check(
+        plugin._parse_yc_body("9" * 40) is None,
+        "严格模式：裸哈希不统计",
+    )
+    check(
+        plugin._parse_yc_body("magnet:?xt=urn:btih:" + "9" * 40) is not None,
+        "严格模式：规范链接照常统计",
+    )
+    check(
+        plugin._parse_yc_body("某资源名称") is not None,
+        "严格模式：没有链接的纯名字照常记录",
+    )
+    cfg["link_strict"] = False
+
     parsed_typo32 = plugin._parse_yc_body("manget?xt=urn:btih:" + "5" * 32)
     check(
         parsed_typo32["hash"] == "5" * 32
@@ -463,6 +484,8 @@ async def main():
         str(parsed_named),
     )
 
+    # 下面几条验证「容错模式」：写错前缀也能解析（严格模式默认忽略，见 2.5）
+    cfg["link_strict"] = False
     check(plugin._parse_yc_body("   ") is None, "空内容返回 None")
 
     print("== 3. 记录计数 / 白名单 / 回执 ==")

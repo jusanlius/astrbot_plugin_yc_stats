@@ -1101,6 +1101,12 @@ class YcStatsPlugin(Star):
             # 容错：链接前缀常被写错（manget? / nanget? / 少了 magnet:），
             # 只要文本里出现 xt=urn:btih:<哈希> 或独立的 32/40 位哈希就认
             hash_match = HASH_ANY_RE.search(text)
+            if hash_match and self._link_strict() and not links:
+                # 严格模式（默认）：链接前缀写错 / 只丢了个哈希 → 视为无效，不统计
+                logger.info(
+                    f"[{PLUGIN_NAME}] 链接格式不规范（缺少 magnet:?xt=urn:btih: 前缀），已忽略：{text[:80]}"
+                )
+                return None
             if hash_match:
                 raw_hash = hash_match.group(1)
                 is_base32 = bool(
@@ -1376,6 +1382,14 @@ class YcStatsPlugin(Star):
                 if candidate.is_file():
                     return candidate
         return None
+
+    def _link_strict(self) -> bool:
+        """是否只统计规范的磁力链接（默认 True）。
+
+        Returns:
+            True = 前缀写错/裸哈希一律忽略；False = 容错解析（写错也能统计）。
+        """
+        return bool(self._cfg("link_strict", True))
 
     def _empty_mode(self) -> str:
         """返回空战报出图方式：``image``（直接发图）或 ``generated``（生成摆烂图）。"""

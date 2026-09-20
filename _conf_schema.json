@@ -11,6 +11,12 @@
     "default": ["#验车", "验车"],
     "hint": "消息以这些词开头（可带 / 前缀）即视为验车记录请求，例如 #验车 magnet:?xt=... 。"
   },
+  "link_strict": {
+    "type": "bool",
+    "description": "只统计规范的磁力链接",
+    "default": true,
+    "hint": "开启后，链接前缀写错的（如 manget?／nanget?／只发了一串哈希）一律不记录、不计数；关闭则尽量容错解析。"
+  },
   "name_max_len": {
     "type": "int",
     "description": "记录名称最大字数",
